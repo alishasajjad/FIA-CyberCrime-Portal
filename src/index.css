@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@100;200;300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	html {
+		font-family: 'DM Sans', sans-serif !important;
+		font-feature-settings: 'kern' !important;
+		-webkit-font-smoothing: antialiased;
+		letter-spacing: -0.5px;
+	}
+}
+
+input.defaultCheckbox::before {
+	content: url(../src/assets/svg/checked.svg); 
+	color: white;
+	opacity: 0; 
+	height: 16px; 
+	width: 16px;
+	position: absolute; 
+	left: 50%;
+	transform: translate(-50%, 0px);
+} 
+
+input:checked.defaultCheckbox::before { 
+	opacity: 1;
+}
+
+@keyframes public-shimmer {
+	0% { background-position: -200% 0; }
+	100% { background-position: 200% 0; }
+}
+
+.public-skeleton {
+	background: linear-gradient(
+		90deg,
+		rgba(255, 255, 255, 0.2) 25%,
+		rgba(255, 255, 255, 0.4) 50%,
+		rgba(255, 255, 255, 0.2) 75%
+	);
+	background-size: 200% 100%;
+	animation: public-shimmer 1.5s infinite;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border-width: 0;
+}
+
+.sr-only:focus {
+	position: fixed;
+	width: auto;
+	height: auto;
+	padding: 0.5rem 1rem;
+	margin: 0;
+	overflow: visible;
+	clip: auto;
+	white-space: normal;
+}
