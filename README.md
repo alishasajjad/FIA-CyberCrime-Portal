@@ -467,6 +467,7 @@ This project is distributed under the terms in [LICENSE.md](LICENSE.md). It is i
 
 **alishasajjad** 
 - dev.alishasajjad@gmail.com
+
 **devzarmeen**
 - devzarmeenrasool@gmail.com
 
