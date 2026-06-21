@@ -14,43 +14,6 @@
 
 ---
 
-## 📖 Table of Contents
-
-- [Project Overview](#-project-overview)
-- [Problem Statement](#-problem-statement)
-- [Solution Overview](#-solution-overview)
-- [Complete Feature List](#-complete-feature-list)
-  - [Public Website](#public-website-features)
-  - [User Panel](#user-panel-features)
-  - [Officer Panel](#officer-panel-features)
-  - [Admin Panel](#admin-panel-features)
-- [Complaint Lifecycle Workflow](#-complaint-lifecycle-workflow)
-- [Escalation Engine](#-escalation-engine)
-- [Real-Time Communication Architecture](#-real-time-communication-architecture)
-- [Audit Trail System](#-audit-trail-system)
-- [Evidence Management System](#-evidence-management-system)
-- [Support Ticket System](#-support-ticket-system)
-- [Analytics & Reporting](#-analytics--reporting)
-- [System Health Monitoring](#-system-health-monitoring)
-- [Authentication & RBAC](#-authentication--rbac)
-- [Technology Stack](#-technology-stack)
-- [System Architecture](#-system-architecture)
-- [Database Overview](#-database-overview)
-- [Folder Structure](#-folder-structure)
-- [Installation Guide](#-installation-guide)
-- [Environment Variables](#-environment-variables)
-- [MongoDB Atlas Configuration](#-mongodb-atlas-configuration)
-- [API Overview](#-api-overview)
-- [Socket Events](#-socket-events)
-- [Screenshots](#-screenshots)
-- [Deployment Guide](#-deployment-guide)
-- [Future Enhancements](#-future-enhancements)
-- [Contributing](#-contributing)
-- [License](#-license)
-- [Author](#-author)
-
----
-
 ## 🎯 Project Overview
 
 The **National Cyber Crime Reporting Portal** is a full-stack, enterprise-grade web application that lets citizens securely report cyber crimes, lets investigation officers manage cases end-to-end, and gives administrators full operational command over the platform.
@@ -465,24 +428,6 @@ All listeners degrade gracefully to polling if the socket is unavailable.
 
 ---
 
-## 📸 Screenshots
-
-> Replace these placeholders with real screenshots in `docs/screenshots/`.
-
-| Public Home | User Timeline | Officer Workspace |
-|---|---|---|
-| _`docs/screenshots/home.png`_ | _`docs/screenshots/timeline.png`_ | _`docs/screenshots/officer.png`_ |
-
-| Admin Dashboard | Advanced Analytics | Audit Trail |
-|---|---|---|
-| _`docs/screenshots/admin.png`_ | _`docs/screenshots/analytics.png`_ | _`docs/screenshots/audit.png`_ |
-
-| Complaint Details | System Health | Escalation Rules |
-|---|---|---|
-| _`docs/screenshots/details.png`_ | _`docs/screenshots/health.png`_ | _`docs/screenshots/escalation.png`_ |
-
----
-
 ## 🚢 Deployment Guide
 
 **Frontend (static)**
@@ -512,16 +457,6 @@ npm run build       # outputs ./build
 
 ---
 
-## 🤝 Contributing
-
-1. Fork the repo and create a feature branch: `git checkout -b feature/your-feature`.
-2. Follow the existing code style (Prettier; match surrounding conventions).
-3. Keep changes additive — **do not break existing APIs, workflows, or RBAC**.
-4. Run `npm run build` (frontend) and verify the backend loads before opening a PR.
-5. Submit a clear PR describing **what** changed and **why**.
-
----
-
 ## 📄 License
 
 This project is distributed under the terms in [LICENSE.md](LICENSE.md). It is intended for educational, governmental, and authorized public-service use.
@@ -531,8 +466,10 @@ This project is distributed under the terms in [LICENSE.md](LICENSE.md). It is i
 ## 👤 Author
 
 **alishasajjad** 
+- dev.alishasajjad@gmail.com
 
-> Update this section with your name, organization, and contact details before publishing. Built as a final-year / enterprise capstone implementation of a national cyber crime management platform.
+**devzarmeen**
+- devzarmeenrasool@gmail.com
 
 ---
 
