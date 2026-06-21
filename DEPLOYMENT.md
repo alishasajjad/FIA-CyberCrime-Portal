@@ -91,16 +91,14 @@ On a normal server these run on in‑process timers. Serverless functions freeze
 
 Both require the `CRON_SECRET` (sent as `Authorization: Bearer <CRON_SECRET>` or `?key=<CRON_SECRET>`).
 
-**Vercel Cron** is already configured in `backend/vercel.json` (runs daily — the Hobby plan only allows daily schedules, and Vercel injects the `CRON_SECRET` header automatically).
-
-**To run them at the original frequency** (escalation ≈15 min, reminders ≈5 min), use a free external scheduler — e.g. [cron-job.org](https://cron-job.org) or UptimeRobot — to GET:
+**Use a free external scheduler** — e.g. [cron-job.org](https://cron-job.org) or UptimeRobot — to GET these on a schedule (this also gives you the original frequency, escalation ≈15 min / reminders ≈5 min):
 
 ```
 https://your-backend.vercel.app/api/cron/escalation?key=YOUR_CRON_SECRET   every 15 min
 https://your-backend.vercel.app/api/cron/reminders?key=YOUR_CRON_SECRET    every 5 min
 ```
 
-(Or upgrade to Vercel Pro for sub‑daily cron schedules.)
+> Note: `backend/vercel.json` uses an explicit `builds`/`routes` config (the most reliable way to deploy the Express API as a serverless function — it bypasses Vercel's framework auto-detection). Vercel's built-in Cron isn't used in this config, so the external scheduler above is the way to run the sweeps.
 
 ---
 
