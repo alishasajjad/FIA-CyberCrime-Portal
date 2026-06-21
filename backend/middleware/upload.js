@@ -2,23 +2,40 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const appConfig = require("../config/appConfig");
+const { cloudinaryConfigured } = require("../utils/storage");
 
 const uploadDir = path.join(__dirname, "..", "uploads");
 
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// Storage selection:
+// - Cloudinary configured (e.g. on serverless/Vercel): buffer files in memory,
+//   then stream them to Cloudinary in the evidence controller.
+// - Otherwise (local/dev/long-running host): write to local ./uploads as before.
+let storage;
+if (cloudinaryConfigured) {
+  storage = multer.memoryStorage();
+} else {
+  // Guard mkdir so a read-only filesystem never crashes module load.
+  try {
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+  } catch (err) {
+    console.warn("[Upload] Could not ensure uploads dir:", err?.message || err);
+  }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const safeBase = path.basename(file.originalname).replace(/[^\w.\-]+/g, "_");
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${file.fieldname}-${uniqueSuffix}-${safeBase}`);
-  },
-});
+  storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const safeBase = path
+        .basename(file.originalname)
+        .replace(/[^\w.\-]+/g, "_");
+      const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, `${file.fieldname}-${uniqueSuffix}-${safeBase}`);
+    },
+  });
+}
 
 const fileFilter = (req, file, cb) => {
   const allowedExact = new Set([

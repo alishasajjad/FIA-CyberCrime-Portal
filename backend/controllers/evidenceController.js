@@ -1,10 +1,11 @@
-const path = require("path");
 const fs = require("fs");
 const Evidence = require("../models/Evidence");
 const Complaint = require("../models/Complaint");
 const appConfig = require("../config/appConfig");
 const { createNotification } = require("../utils/notify");
 const { recordAudit } = require("../utils/audit");
+const { isCloudStorage, uploadBufferToCloud } = require("../utils/storage");
+const { resolveFileUrl } = require("../utils/fileUrl");
 
 function hasAccess(role, complaint, userId) {
   if (!complaint) return false;
@@ -26,7 +27,6 @@ function senderInfo(uploadedBy) {
 }
 
 function toEvidenceResponse(e) {
-  const fileName = e.filePath ? path.basename(e.filePath) : "";
   return {
     _id: e._id,
     complaint: e.complaint,
@@ -36,7 +36,7 @@ function toEvidenceResponse(e) {
     size: e.size,
     message: e.message || "",
     createdAt: e.createdAt,
-    fileUrl: fileName ? `http://localhost:${process.env.PORT || 5000}/uploads/${fileName}` : null,
+    fileUrl: resolveFileUrl(e.filePath),
   };
 }
 
@@ -55,15 +55,35 @@ async function uploadEvidence(req, res, next) {
 
     const message = String(req.body?.message || "").trim();
 
-    const evidenceDocs = files.map((f) => ({
-      complaint: complaint._id,
-      uploadedBy: userId,
-      originalName: f.originalname,
-      filePath: f.path,
-      mimeType: f.mimetype,
-      size: f.size,
-      message,
-    }));
+    let evidenceDocs;
+    if (isCloudStorage()) {
+      // Files are buffered in memory; stream each to Cloudinary and persist
+      // the returned secure URL as filePath.
+      evidenceDocs = await Promise.all(
+        files.map(async (f) => {
+          const result = await uploadBufferToCloud(f);
+          return {
+            complaint: complaint._id,
+            uploadedBy: userId,
+            originalName: f.originalname,
+            filePath: result.secure_url,
+            mimeType: f.mimetype,
+            size: f.size || result.bytes || 0,
+            message,
+          };
+        })
+      );
+    } else {
+      evidenceDocs = files.map((f) => ({
+        complaint: complaint._id,
+        uploadedBy: userId,
+        originalName: f.originalname,
+        filePath: f.path,
+        mimeType: f.mimetype,
+        size: f.size,
+        message,
+      }));
+    }
 
     const saved = await Evidence.insertMany(evidenceDocs);
 

@@ -1,0 +1,7 @@
+# Frontend (root) Vercel project ignores — keep the backend out of the
+# frontend deployment. The backend deploys as a SEPARATE Vercel project whose
+# Root Directory is set to "backend".
+backend
+node_modules
+build
+.env

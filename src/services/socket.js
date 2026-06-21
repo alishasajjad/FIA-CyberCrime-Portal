@@ -11,6 +11,18 @@ let socket = null;
  * repeatedly — returns the existing socket. No-op without an auth token.
  */
 export function connectSocket() {
+  // Realtime is opt-out. On hosts without persistent WebSockets (e.g. Vercel
+  // serverless) set REACT_APP_ENABLE_REALTIME="false" to skip connection
+  // attempts; the stores then rely on their built-in polling fallback. Local
+  // dev (var unset) keeps realtime enabled, unchanged.
+  if (
+    typeof process !== "undefined" &&
+    process.env &&
+    process.env.REACT_APP_ENABLE_REALTIME === "false"
+  ) {
+    return null;
+  }
+
   const token =
     typeof localStorage !== "undefined" ? localStorage.getItem("token") : "";
   if (!token) return null;

@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const path = require("path");
+const { resolveFileUrl } = require("../utils/fileUrl");
 const Complaint = require("../models/Complaint");
 const Evidence = require("../models/Evidence");
 const Assignment = require("../models/Assignment");
@@ -639,7 +639,6 @@ async function getComplaintDetails(req, res) {
           : Promise.resolve([]),
       ]);
 
-    const baseUrl = `http://localhost:${process.env.PORT || 5000}`;
     const evidence = evidenceDocs.map((e) => ({
       _id: e._id,
       originalName: e.originalName,
@@ -650,7 +649,7 @@ async function getComplaintDetails(req, res) {
       uploadedBy: e.uploadedBy
         ? { _id: e.uploadedBy._id, name: e.uploadedBy.name, role: e.uploadedBy.role }
         : null,
-      fileUrl: e.filePath ? `${baseUrl}/uploads/${path.basename(e.filePath)}` : null,
+      fileUrl: resolveFileUrl(e.filePath),
     }));
 
     // Resolution summary derived from history (no schema changes).

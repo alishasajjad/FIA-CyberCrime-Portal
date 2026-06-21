@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell($env:CI=\"false\"; npm run build 2>&1 | Select-String -Pattern \"Compiled|Failed|Error|Cannot find|Module not found|Attempted\" | Select-Object -First 30)"
-    ]
-  }
-}

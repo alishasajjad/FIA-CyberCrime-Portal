@@ -11,12 +11,24 @@ function parseMbToBytes(mb) {
   return parsePositiveInt(mb, 1) * 1024 * 1024;
 }
 
+// CORS_ORIGIN may be a single origin or a comma-separated allowlist (e.g. the
+// production frontend URL plus Vercel preview URLs or an apex/www variant).
+// Returns a string for a single origin (unchanged behaviour) or an array for
+// several. Both forms are accepted by the cors package and Socket.IO.
+function parseCorsOrigin(value) {
+  const list = String(value || "http://localhost:3000")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return list.length > 1 ? list : list[0];
+}
+
 const isProduction = process.env.NODE_ENV === "production";
 
 module.exports = {
   isProduction,
   port: parsePositiveInt(process.env.PORT, 5000),
-  corsOrigin: process.env.CORS_ORIGIN || "http://localhost:3000",
+  corsOrigin: parseCorsOrigin(process.env.CORS_ORIGIN),
   trustProxy: process.env.TRUST_PROXY === "true" || isProduction,
   requestTimeoutMs: parsePositiveInt(process.env.REQUEST_TIMEOUT_MS, 30000),
   jsonBodyLimit: process.env.JSON_BODY_LIMIT || "2mb",

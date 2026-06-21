@@ -1,2 +1,0 @@
-web 
-mongodb://<db_username>:<db_password>@ac-nxpansb-shard-00-00.9ipj71e.mongodb.net:27017,ac-nxpansb-shard-00-01.9ipj71e.mongodb.net:27017,ac-nxpansb-shard-00-02.9ipj71e.mongodb.net:27017/CyberCrimeReportDB?ssl=true&replicaSet=atlas-pkkn8g-shard-0&authSource=admin&appName=Cluster0
