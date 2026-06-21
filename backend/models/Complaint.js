@@ -42,6 +42,9 @@ const complaintSchema = new mongoose.Schema(
         status: { type: String, trim: true },
         at: { type: Date, default: Date.now },
         by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        // Optional note captured at the moment of the transition, surfaced on
+        // the user-facing progress timeline. Additive; legacy entries omit it.
+        note: { type: String, default: "", trim: true },
       },
     ],
 

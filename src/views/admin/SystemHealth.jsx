@@ -1,5 +1,6 @@
 import React from "react";
 import { apiFetch } from "services/api";
+import { onSocket } from "services/socket";
 import {
   StatCard,
   SectionCard,
@@ -20,7 +21,34 @@ import {
   MdBolt,
   MdWifiTethering,
   MdSchedule,
+  MdApi,
+  MdInbox,
+  MdHistory,
 } from "react-icons/md";
+
+const OPEN_STATUSES = ["Pending", "In Review", "Under Investigation"];
+
+function timeAgo(ts) {
+  if (!ts) return "";
+  const diff = Math.max(0, Date.now() - new Date(ts).getTime());
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+const ACTIVITY_STYLES = {
+  Registration: "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
+  Complaint: "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+  Resolution: "bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300",
+  Assignment: "bg-brand-600/10 text-brand-700 dark:text-brand-300",
+  Evidence: "bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300",
+  Message: "bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300",
+  Account: "bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+  Escalation: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+};
 
 function fmtUptime(sec) {
   if (!sec && sec !== 0) return "—";
@@ -70,29 +98,69 @@ function Bar({ label, count, max, color }) {
 
 const SystemHealth = () => {
   const [data, setData] = React.useState(null);
+  const [apiHealth, setApiHealth] = React.useState(null);
+  const [activity, setActivity] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
+  const [updatedAt, setUpdatedAt] = React.useState(null);
 
-  const load = React.useCallback(async () => {
-    setLoading(true);
+  const load = React.useCallback(async (silent) => {
+    if (!silent) setLoading(true);
     setError("");
-    try {
-      setData(await apiFetch("/reports/system-health"));
-    } catch (err) {
-      setError(err?.message || "Failed to load system health.");
-    } finally {
-      setLoading(false);
+
+    // API health probe with client-measured latency.
+    const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const [healthRes, sysRes, auditRes] = await Promise.allSettled([
+      apiFetch("/health"),
+      apiFetch("/reports/system-health"),
+      apiFetch("/reports/audit-log?limit=12"),
+    ]);
+    const latency = Math.round(
+      (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0
+    );
+
+    if (healthRes.status === "fulfilled") {
+      setApiHealth({ ok: !!healthRes.value?.ok, latency, uptimeSec: healthRes.value?.uptimeSec });
+    } else {
+      setApiHealth({ ok: false, latency: null });
     }
+
+    if (sysRes.status === "fulfilled") {
+      setData(sysRes.value);
+      setUpdatedAt(new Date());
+    } else if (!silent) {
+      setError(sysRes.reason?.message || "Failed to load system health.");
+    }
+
+    if (auditRes.status === "fulfilled") {
+      setActivity(Array.isArray(auditRes.value?.events) ? auditRes.value.events : []);
+    }
+
+    if (!silent) setLoading(false);
   }, []);
 
   React.useEffect(() => {
     load();
+    // Realtime nudges from the server keep this live; a slow poll is the fallback.
+    const id = setInterval(() => load(true), 60000);
+    const offTick = onSocket("health:tick", () => load(true));
+    const offStats = onSocket("stats:changed", () => load(true));
+    const offAudit = onSocket("audit:new", () => load(true));
+    return () => {
+      clearInterval(id);
+      offTick();
+      offStats();
+      offAudit();
+    };
   }, [load]);
 
   const t = data?.totals || {};
   const maxStatus = Math.max(1, ...(data?.byStatus || []).map((s) => s.count));
   const maxSeverity = Math.max(1, ...(data?.bySeverity || []).map((s) => s.count));
   const maxMonth = Math.max(1, ...(data?.byMonth || []).map((s) => s.count));
+  const queueSize = (data?.byStatus || [])
+    .filter((s) => OPEN_STATUSES.includes(s.status))
+    .reduce((sum, s) => sum + (s.count || 0), 0);
 
   return (
     <div className="mt-3 space-y-6">
@@ -111,13 +179,22 @@ const SystemHealth = () => {
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={load}
-          className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-navy-900 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-navy-600 dark:text-white dark:hover:bg-navy-900"
-        >
-          <MdRefresh className="h-4 w-4" aria-hidden /> Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+            </span>
+            Live{updatedAt ? ` · ${timeAgo(updatedAt)}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => load()}
+            className="flex items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-navy-900 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-navy-600 dark:text-white dark:hover:bg-navy-900"
+          >
+            <MdRefresh className="h-4 w-4" aria-hidden /> Refresh
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -136,7 +213,14 @@ const SystemHealth = () => {
             title="Application Health"
             subtitle="Live application-level signals — no sensitive infrastructure exposed."
           >
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+              <HealthTile
+                icon={MdApi}
+                label="API Status"
+                value={apiHealth ? (apiHealth.ok ? "Operational" : "Down") : "…"}
+                hint={apiHealth?.latency != null ? `${apiHealth.latency} ms` : undefined}
+                ok={apiHealth?.ok}
+              />
               <HealthTile
                 icon={MdWifiTethering}
                 label="Database"
@@ -144,9 +228,10 @@ const SystemHealth = () => {
                 ok={data?.db?.state === 1}
               />
               <HealthTile icon={MdSchedule} label="Uptime" value={fmtUptime(data?.app?.uptimeSec)} ok />
-              <HealthTile icon={MdBolt} label="New (24h)" value={data?.throughput?.last24h ?? 0} ok />
-              <HealthTile icon={MdBolt} label="New (7d)" value={data?.throughput?.last7d ?? 0} ok />
+              <HealthTile icon={MdInbox} label="Queue Size" value={queueSize} hint="open complaints" ok={queueSize === 0} />
               <HealthTile icon={MdGroups} label="Active Sessions" value={data?.sessions?.active ?? 0} ok />
+              <HealthTile icon={MdGroups} label="Online Officers" value={data?.sessions?.onlineOfficers ?? 0} hint="estimated" ok />
+              <HealthTile icon={MdBolt} label="New (24h)" value={data?.throughput?.last24h ?? 0} ok />
               <HealthTile icon={MdCloudUpload} label="Evidence Files" value={`${data?.uploads?.evidenceCount ?? 0}`} hint={fmtBytes(data?.uploads?.totalBytes)} ok />
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-400">
@@ -269,6 +354,39 @@ const SystemHealth = () => {
               )}
             </SectionCard>
           </div>
+
+          <SectionCard
+            title={<span className="flex items-center gap-2"><MdHistory className="h-5 w-5 text-brand-600" /> Recent System Activity</span>}
+            subtitle="Live feed of the latest platform events"
+          >
+            {loading && activity.length === 0 ? (
+              <CardSkeleton lines={5} />
+            ) : activity.length === 0 ? (
+              <EmptyState icon={MdHistory} title="No recent activity" />
+            ) : (
+              <ul className="divide-y divide-gray-100 dark:divide-white/5">
+                {activity.map((e, i) => (
+                  <li key={i} className="flex items-center gap-3 py-2.5">
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                        ACTIVITY_STYLES[e.type] || "bg-gray-100 text-gray-600 dark:bg-navy-700 dark:text-gray-300"
+                      }`}
+                    >
+                      {e.type}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-navy-900 dark:text-white">
+                        {e.summary}
+                        {e.ref ? <span className="ml-1 font-mono text-xs text-gray-400">· {e.ref}</span> : null}
+                      </p>
+                      <p className="text-xs text-gray-400">{e.actor}</p>
+                    </div>
+                    <span className="shrink-0 text-xs text-gray-400">{timeAgo(e.ts)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SectionCard>
         </>
       )}
     </div>

@@ -18,7 +18,18 @@ export default function Register() {
     message: "",
     busy: false,
     devCode: "",
+    resendIn: 0, // seconds remaining before resend is allowed
   });
+
+  // Resend cooldown countdown (mirrors the backend 30s cooldown).
+  React.useEffect(() => {
+    if (otp.resendIn <= 0) return undefined;
+    const t = setTimeout(
+      () => setOtp((o) => ({ ...o, resendIn: Math.max(0, o.resendIn - 1) })),
+      1000
+    );
+    return () => clearTimeout(t);
+  }, [otp.resendIn]);
 
   const requestOtp = async (resend) => {
     const phone = document.getElementById("phoneNumber")?.value?.trim() || "";
@@ -38,6 +49,7 @@ export default function Register() {
         busy: false,
         message: data?.message || "Code sent.",
         devCode: data?.devCode || "",
+        resendIn: 30,
       }));
     } catch (err) {
       setOtp((o) => ({ ...o, busy: false, message: err?.message || "Failed to send code." }));
@@ -313,10 +325,10 @@ export default function Register() {
                 <button
                   type="button"
                   onClick={() => requestOtp(true)}
-                  disabled={otp.busy}
-                  className="rounded-lg border border-gray-200 px-4 py-2.5 text-xs font-semibold text-navy-900 transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-navy-600 dark:text-white dark:hover:bg-navy-800"
+                  disabled={otp.busy || otp.resendIn > 0}
+                  className="rounded-lg border border-gray-200 px-4 py-2.5 text-xs font-semibold text-navy-900 transition hover:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 dark:border-navy-600 dark:text-white dark:hover:bg-navy-800"
                 >
-                  Resend
+                  {otp.resendIn > 0 ? `Resend in ${otp.resendIn}s` : "Resend"}
                 </button>
               </div>
               {otp.devCode ? (

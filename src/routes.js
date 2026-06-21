@@ -3,7 +3,9 @@ import React from "react";
 // Admin Imports
 import CrimeDashboard from "views/admin/CrimeDashboard";
 import ReportCrime from "views/admin/ReportCrime";
+import Drafts from "views/admin/Drafts";
 import TrackComplaint from "views/admin/TrackComplaint";
+import ComplaintDetails from "views/admin/ComplaintDetails";
 import Investigations from "views/admin/Investigations";
 import Evidence from "views/admin/Evidence";
 import Users from "views/admin/Users";
@@ -28,6 +30,7 @@ import Register from "views/auth/Register";
 import {
   MdHome,
   MdAssignment,
+  MdDrafts,
   MdSearch,
   MdGavel,
   MdFolderSpecial,
@@ -65,12 +68,29 @@ const routes = [
     roles: ["User"],
   },
   {
+    name: "My Drafts",
+    layout: "/admin",
+    path: "drafts",
+    icon: <MdDrafts className="h-6 w-6" />,
+    component: <Drafts />,
+    roles: ["User"],
+  },
+  {
     name: "Track Complaint",
     layout: "/admin",
     path: "track-complaint",
     icon: <MdSearch className="h-6 w-6" />,
     component: <TrackComplaint />,
     roles: ["User", "InvestigationOfficer"],
+  },
+  {
+    name: "Complaint Details",
+    layout: "/admin",
+    path: "complaint/:id",
+    icon: <MdGavel className="h-6 w-6" />,
+    component: <ComplaintDetails />,
+    roles: ["Admin", "User", "InvestigationOfficer"],
+    hidden: true,
   },
   {
     name: "Investigations",

@@ -6,6 +6,7 @@ import Footer from "components/footer/Footer";
 import routes from "routes.js";
 import RoleGuard from "components/auth/RoleGuard";
 import { defaultRouteForRole, getAuthRole } from "utils/auth";
+import { connectSocket } from "services/socket";
 
 function AdminEntryRedirect() {
   const token = localStorage.getItem("token") || "";
@@ -30,6 +31,11 @@ export default function Admin(props) {
   React.useEffect(() => {
     getActiveRoute(routes);
   }, [location.pathname]);
+
+  // Establish the authenticated realtime connection for the dashboard session.
+  React.useEffect(() => {
+    if (token) connectSocket();
+  }, [token]);
 
   if (!token) {
     return <Navigate to="/auth/sign-in" state={{ from: location }} replace />;

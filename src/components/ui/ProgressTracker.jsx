@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { MdCheck, MdAccessTime } from "react-icons/md";
+import { MdCheck, MdAccessTime, MdPerson } from "react-icons/md";
 
 // Order-tracking-style progress (Amazon/Daraz/Foodpanda). Derived entirely from
 // real complaint data: status, statusHistory timestamps, assignment, resolvedAt.
@@ -10,10 +10,21 @@ const orderIndex = (s) => {
   return i === -1 ? 0 : i;
 };
 
-function historyTime(history, status) {
+function historyEntry(history, status) {
   if (!Array.isArray(history)) return null;
-  const hit = history.find((h) => h.status === status);
-  return hit?.at || null;
+  // Last matching entry reflects the most recent transition into this status.
+  const matches = history.filter((h) => h.status === status);
+  return matches.length ? matches[matches.length - 1] : null;
+}
+
+function historyTime(history, status) {
+  return historyEntry(history, status)?.at || null;
+}
+
+function actorName(entry) {
+  const by = entry?.by;
+  if (by && typeof by === "object" && by.name) return by.name;
+  return null;
 }
 
 function fmt(ts) {
@@ -33,7 +44,12 @@ export default function ProgressTracker({ complaint }) {
   const status = complaint.status || "Pending";
   const idx = orderIndex(status);
   const history = complaint.statusHistory;
-  const resolvedTs = complaint.resolvedAt || historyTime(history, "Resolved") || historyTime(history, "Closed");
+  const reviewEntry = historyEntry(history, "In Review");
+  const investigationEntry = historyEntry(history, "Under Investigation");
+  const resolvedEntry =
+    historyEntry(history, "Resolved") || historyEntry(history, "Closed");
+  const resolvedTs = complaint.resolvedAt || resolvedEntry?.at || null;
+  const officerName = complaint.assignedTo?.name || actorName(investigationEntry);
 
   const stages = [
     {
@@ -48,21 +64,26 @@ export default function ProgressTracker({ complaint }) {
       label: "Reviewed",
       desc: "Verified by the cyber crime desk.",
       reached: idx >= 1,
-      ts: historyTime(history, "In Review"),
+      ts: reviewEntry?.at || null,
+      actor: actorName(reviewEntry),
+      note: reviewEntry?.note,
     },
     {
       key: "assigned",
       label: "Assigned",
       desc: "Allocated to an investigation officer.",
       reached: !!complaint.assignedTo || idx >= 2,
-      ts: null,
+      ts: investigationEntry?.at || null,
+      actor: officerName,
     },
     {
       key: "investigation",
       label: "Investigation Started",
       desc: "Formal inquiry under way.",
       reached: idx >= 2,
-      ts: historyTime(history, "Under Investigation"),
+      ts: investigationEntry?.at || null,
+      actor: officerName,
+      note: investigationEntry?.note,
     },
     {
       key: "evidence",
@@ -70,6 +91,7 @@ export default function ProgressTracker({ complaint }) {
       desc: "Submitted evidence reviewed.",
       reached: idx >= 3,
       ts: null,
+      actor: officerName,
     },
     {
       key: "resolved",
@@ -77,6 +99,8 @@ export default function ProgressTracker({ complaint }) {
       desc: "Investigation concluded.",
       reached: idx >= 3,
       ts: resolvedTs,
+      actor: actorName(resolvedEntry),
+      note: resolvedEntry?.note,
     },
   ];
 
@@ -117,6 +141,16 @@ export default function ProgressTracker({ complaint }) {
                 {s.ts && s.reached ? (
                   <p className="mt-0.5 text-[10px] text-gray-400">{fmt(s.ts)}</p>
                 ) : null}
+                {s.actor && s.reached ? (
+                  <p className="mt-0.5 px-1 text-[10px] font-medium text-brand-700 dark:text-brand-300">
+                    {s.actor}
+                  </p>
+                ) : null}
+                {s.note && s.reached ? (
+                  <p className="mt-0.5 max-w-[120px] truncate px-1 text-[10px] italic text-gray-500 dark:text-gray-400" title={s.note}>
+                    “{s.note}”
+                  </p>
+                ) : null}
               </div>
             </li>
           );
@@ -145,6 +179,16 @@ export default function ProgressTracker({ complaint }) {
               {s.ts && s.reached ? (
                 <p className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-400">
                   <MdAccessTime className="h-3 w-3" aria-hidden /> {fmt(s.ts)}
+                </p>
+              ) : null}
+              {s.actor && s.reached ? (
+                <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-brand-700 dark:text-brand-300">
+                  <MdPerson className="h-3 w-3" aria-hidden /> {s.actor}
+                </p>
+              ) : null}
+              {s.note && s.reached ? (
+                <p className="mt-1 rounded-lg bg-gray-50 px-2 py-1 text-[11px] italic text-gray-600 dark:bg-navy-900 dark:text-gray-300">
+                  “{s.note}”
                 </p>
               ) : null}
             </li>

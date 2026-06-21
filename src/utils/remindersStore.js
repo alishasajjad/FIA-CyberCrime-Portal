@@ -1,13 +1,14 @@
 import { useSyncExternalStore } from "react";
 import { apiFetch } from "services/api";
+import { connectSocket, onSocket } from "services/socket";
 
-// Shared single-source poller for officer reminders (calendar events). Mirrors
-// notificationsStore so the calendar, alert center, and officer dashboard all
-// stay in sync without each running its own interval.
+// Shared single-source store for officer reminders (calendar events). Reminder
+// due/overdue alerts arrive over Socket.IO; a slow poll remains as fallback.
 let state = { reminders: [], loaded: false };
 const listeners = new Set();
 let timer = null;
-const POLL_MS = 30000;
+let socketCleanups = [];
+const POLL_MS = 60000;
 
 function emit() {
   listeners.forEach((l) => l());
@@ -39,6 +40,15 @@ function start() {
   if (timer) return;
   refreshReminders();
   timer = setInterval(refreshReminders, POLL_MS);
+  connectSocket();
+  // A reminder due/overdue alert is delivered as a notification carrying a
+  // reminderId — refresh the calendar store when one arrives.
+  socketCleanups.push(
+    onSocket("notification:new", (payload) => {
+      if (payload?.notification?.meta?.reminderId) refreshReminders();
+    })
+  );
+  socketCleanups.push(onSocket("connect", refreshReminders));
 }
 
 function stop() {
@@ -46,6 +56,8 @@ function stop() {
     clearInterval(timer);
     timer = null;
   }
+  socketCleanups.forEach((fn) => fn());
+  socketCleanups = [];
 }
 
 function subscribe(cb) {

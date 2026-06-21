@@ -36,6 +36,7 @@ export default function FAQSection() {
     <section className="py-20 md:py-28" aria-labelledby="faq-heading">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
+          id="faq-heading"
           eyebrow="FAQ"
           title="Frequently Asked Questions"
           subtitle="Quick answers to common questions about reporting and tracking cyber crimes."

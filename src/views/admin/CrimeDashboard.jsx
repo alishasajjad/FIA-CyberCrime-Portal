@@ -10,6 +10,7 @@ import {
   MdArrowForward,
 } from "react-icons/md";
 import { apiFetch } from "services/api";
+import { onSocket } from "services/socket";
 import {
   StatCard,
   SectionCard,
@@ -42,8 +43,7 @@ const CrimeDashboard = () => {
   });
   const [recentComplaints, setRecentComplaints] = React.useState([]);
 
-  React.useEffect(() => {
-    const load = async () => {
+  const load = React.useCallback(async () => {
       setLoading(true);
 
       // --- Fetch complaints (isolated) ---
@@ -88,11 +88,21 @@ const CrimeDashboard = () => {
       }
 
       setLoading(false);
-    };
-
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  // Live refresh when complaints/stats change anywhere in the platform.
+  React.useEffect(() => {
+    const off1 = onSocket("stats:changed", () => load());
+    const off2 = onSocket("complaint:updated", () => load());
+    return () => {
+      off1();
+      off2();
+    };
+  }, [load]);
 
   const active = recentComplaints.find((c) => c._id === activeComplaintId);
   const assignableOfficers = React.useMemo(() => {
@@ -213,7 +223,14 @@ const CrimeDashboard = () => {
                         {row.city || "—"}
                       </td>
                       <td className="px-4 py-2.5">
-                        <StatusBadge status={row.status} />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={row.status} />
+                          {row.escalated ? (
+                            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                              Escalated{row.escalationLevel ? ` L${row.escalationLevel}` : ""}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-2.5">
                         <SeverityBadge severity={row.severity} />
@@ -238,12 +255,21 @@ const CrimeDashboard = () => {
                 key={active._id}
                 className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2"
               >
-                <div className="md:col-span-2 text-sm text-gray-600 dark:text-gray-300">
-                  Managing:{" "}
-                  <span className="font-semibold text-green-700 dark:text-green-300">
-                    {active.referenceId || active._id}
-                  </span>{" "}
-                  ({active.incidentType})
+                <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600 dark:text-gray-300">
+                  <span>
+                    Managing:{" "}
+                    <span className="font-semibold text-green-700 dark:text-green-300">
+                      {active.referenceId || active._id}
+                    </span>{" "}
+                    ({active.incidentType})
+                  </span>
+                  <Link
+                    to={`/admin/complaint/${active._id}`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-brand-200 px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-brand-900/40 dark:text-brand-300 dark:hover:bg-navy-900"
+                  >
+                    View full details
+                    <MdArrowForward className="h-3.5 w-3.5" aria-hidden />
+                  </Link>
                 </div>
 
                 <div className="flex flex-col">

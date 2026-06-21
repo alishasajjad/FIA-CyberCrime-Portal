@@ -1,9 +1,10 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { apiFetch } from "services/api";
 import { getAuthRole } from "utils/auth";
 import { StatusBadge, SeverityBadge } from "components/ui";
 import ProgressTracker from "components/ui/ProgressTracker";
-import { MdPerson, MdLocationCity, MdTag } from "react-icons/md";
+import { MdPerson, MdLocationCity, MdTag, MdArrowForward } from "react-icons/md";
 
 const TrackComplaint = () => {
   const [complaints, setComplaints] = React.useState([]);
@@ -236,9 +237,17 @@ const TrackComplaint = () => {
             {activeComplaint ? (
               <div className="mt-4 rounded-2xl border border-gray-150 bg-gray-50/60 p-5 dark:border-navy-700 dark:bg-navy-900/40">
                 <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                    Complaint Progress
-                  </p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                      Complaint Progress
+                    </p>
+                    <Link
+                      to={`/admin/complaint/${activeComplaint._id}`}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-brand-700 hover:underline dark:text-brand-400"
+                    >
+                      Full details <MdArrowForward className="h-3.5 w-3.5" aria-hidden />
+                    </Link>
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={activeComplaint.status} />
                     <SeverityBadge severity={activeComplaint.severity} />

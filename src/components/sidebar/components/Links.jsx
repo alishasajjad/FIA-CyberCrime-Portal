@@ -20,6 +20,8 @@ export function SidebarLinks(props) {
   const createLinks = (routeList) => {
     return routeList.map((route, index) => {
       if (route.layout === "/admin") {
+        // Detail/utility routes are reachable by URL but hidden from the sidebar.
+        if (route.hidden) return null;
         if (Array.isArray(route.roles) && route.roles.length > 0) {
           if (!role || !route.roles.includes(role)) return null;
         }

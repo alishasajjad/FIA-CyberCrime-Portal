@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const OfficerApprovalLog = require("../models/OfficerApprovalLog");
 const { createNotification } = require("../utils/notify");
+const { recordAudit } = require("../utils/audit");
 const { isPhoneVerified } = require("./otpController");
 const appConfig = require("../config/appConfig");
 const {
@@ -154,6 +155,17 @@ async function register(req, res) {
       department: user.unit,
     });
 
+    recordAudit({
+      action: "USER_REGISTERED",
+      entityType: "User",
+      entityId: user._id,
+      actor: user._id,
+      actorName: user.name,
+      actorRole: user.role,
+      summary: `${user.role} account registered (${user.email})`,
+      req,
+    });
+
     return res.status(201).json({
       user,
       message: requestedOfficer
@@ -212,6 +224,16 @@ async function login(req, res) {
     const { token } = await createUserSession(user, req);
     setSessionCookie(res, token);
 
+    recordAudit({
+      action: "USER_LOGIN",
+      entityType: "Session",
+      actor: user._id,
+      actorName: user.name,
+      actorRole: user.role,
+      summary: `${user.name} signed in`,
+      req,
+    });
+
     return res.json({
       token,
       user: {
@@ -223,6 +245,7 @@ async function login(req, res) {
         isApprovedOfficer: user.isApprovedOfficer,
         unit: user.unit,
         phoneNumber: user.phoneNumber,
+        phoneVerified: user.phoneVerified,
         cnic: user.cnic,
       },
     });
@@ -245,6 +268,7 @@ async function me(req, res) {
         isApprovedOfficer: user.isApprovedOfficer,
         unit: user.unit,
         phoneNumber: user.phoneNumber,
+        phoneVerified: user.phoneVerified,
         cnic: user.cnic,
         status: user.status,
       },
@@ -381,6 +405,14 @@ async function updateUser(req, res) {
       select: "-passwordHash",
     });
     if (!user) return res.status(404).json({ message: "User not found" });
+    recordAudit({
+      req,
+      action: "USER_UPDATED",
+      entityType: "User",
+      entityId: user._id,
+      summary: `Admin updated user ${user.name}`,
+      meta: { changes: Object.keys(update) },
+    });
     return res.json({ user });
   } catch (err) {
     return res.status(500).json({ message: err?.message || "Update failed" });
@@ -476,6 +508,15 @@ async function reviewOfficerRequest(req, res) {
       },
     });
 
+    recordAudit({
+      req,
+      action: "OFFICER_APPROVAL",
+      entityType: "User",
+      entityId: user._id,
+      summary: `Officer request ${normalizedAction === "approve" ? "approved" : "rejected"} for ${user.name}`,
+      meta: { decision: user.officerRequestStatus, department: user.unit, reason: normalizedReason },
+    });
+
     return res.json({ user });
   } catch (err) {
     return res.status(500).json({ message: err?.message || "Failed to review officer request" });
@@ -507,6 +548,12 @@ async function logout(req, res) {
       }
     }
     clearSessionCookie(res);
+    recordAudit({
+      req,
+      action: "USER_LOGOUT",
+      entityType: "Session",
+      summary: `${req.user?.role || "User"} signed out`,
+    });
     return res.json({ message: "Logged out successfully" });
   } catch (err) {
     return res.status(500).json({ message: err?.message || "Logout failed" });
@@ -521,6 +568,13 @@ async function deleteUser(req, res) {
     }
     const result = await User.findByIdAndDelete(id);
     if (!result) return res.status(404).json({ message: "User not found" });
+    recordAudit({
+      req,
+      action: "USER_DELETED",
+      entityType: "User",
+      entityId: id,
+      summary: `Admin deleted user ${result.name || id}`,
+    });
     return res.json({ message: "User deleted" });
   } catch (err) {
     return res.status(500).json({ message: err?.message || "Delete failed" });

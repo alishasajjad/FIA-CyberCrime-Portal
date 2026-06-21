@@ -50,6 +50,22 @@ router.post(
   complaintController.assignComplaint
 );
 
+// Aggregated complaint details (Admin, owner User, assigned Officer)
+router.get(
+  "/:id/details",
+  authMiddleware,
+  requireRoles(["Admin", "User", "InvestigationOfficer"]),
+  complaintController.getComplaintDetails
+);
+
+// Officer: accept or reject an assigned complaint
+router.post(
+  "/:id/respond",
+  authMiddleware,
+  requireRoles(["InvestigationOfficer"]),
+  complaintController.respondToAssignment
+);
+
 // Update status/severity and append case notes (Admin + assigned Officer)
 router.patch(
   "/:id/status",

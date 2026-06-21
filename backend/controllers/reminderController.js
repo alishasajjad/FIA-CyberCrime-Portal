@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Reminder = require("../models/Reminder");
 
 const CATEGORIES = Reminder.REMINDER_CATEGORIES;
+const PRIORITIES = Reminder.REMINDER_PRIORITIES;
 
 function isValidId(id) {
   return mongoose.Types.ObjectId.isValid(id);
@@ -13,10 +14,17 @@ function sanitize(body) {
   if (body.category != null) {
     out.category = CATEGORIES.includes(body.category) ? body.category : "Custom";
   }
+  if (body.priority != null) {
+    out.priority = PRIORITIES.includes(body.priority) ? body.priority : "Medium";
+  }
   if (body.notes != null) out.notes = String(body.notes).trim();
   if (body.dueAt != null) {
     const d = new Date(body.dueAt);
-    if (!Number.isNaN(d.getTime())) out.dueAt = d;
+    if (!Number.isNaN(d.getTime())) {
+      out.dueAt = d;
+      // A new due date should re-arm the due notification.
+      out.dueNotified = false;
+    }
   }
   if (body.allDay != null) out.allDay = !!body.allDay;
   if (body.complaintRef != null) out.complaintRef = String(body.complaintRef).trim();

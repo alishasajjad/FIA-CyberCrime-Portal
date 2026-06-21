@@ -21,6 +21,12 @@ import {
 
 const VIEWS = ["month", "week", "agenda"];
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const PRIORITIES = ["Low", "Medium", "High"];
+const PRIORITY_STYLES = {
+  High: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+  Medium: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+  Low: "bg-gray-100 text-gray-600 dark:bg-navy-700 dark:text-gray-300",
+};
 
 const dayKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -42,6 +48,7 @@ function emptyForm() {
   return {
     title: "",
     category: "EvidenceReview",
+    priority: "Medium",
     dueAt: toLocalInput(due),
     notes: "",
     complaintRef: "",
@@ -114,6 +121,7 @@ export default function OfficerCalendar() {
       form: {
         title: r.title || "",
         category: r.category || "Custom",
+        priority: r.priority || "Medium",
         dueAt: toLocalInput(r.dueAt),
         notes: r.notes || "",
         complaintRef: r.complaintRef || "",
@@ -133,6 +141,7 @@ export default function OfficerCalendar() {
       const body = {
         title: f.title.trim(),
         category: f.category,
+        priority: f.priority,
         dueAt: new Date(f.dueAt).toISOString(),
         notes: f.notes.trim(),
         complaintRef: f.complaintRef.trim(),
@@ -444,8 +453,11 @@ function AgendaRow({ r, isOverdue, onEvent, onToggle, showDate, compact }) {
         <p className={`truncate text-sm font-semibold ${r.completed ? "text-gray-400 line-through" : "text-navy-900 dark:text-white"}`}>
           {r.title}
         </p>
-        <p className="flex flex-wrap items-center gap-x-2 text-[11px] text-gray-500 dark:text-gray-400">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400">
           <span className={`rounded px-1.5 py-0.5 ${cat.chip}`}>{cat.label}</span>
+          <span className={`rounded px-1.5 py-0.5 font-semibold ${PRIORITY_STYLES[r.priority] || PRIORITY_STYLES.Medium}`}>
+            {r.priority || "Medium"}
+          </span>
           {showDate ? <span>{new Date(r.dueAt).toLocaleDateString()}</span> : null}
           <span>{fmtTime(r.dueAt)}</span>
           {r.complaintRef ? <span className="font-mono">· {r.complaintRef}</span> : null}
@@ -495,6 +507,14 @@ function EventModal({ modal, setModal, busy, onSave, onDelete }) {
               <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-gray-500">Due</label>
               <input type="datetime-local" className={input} value={f.dueAt} onChange={(e) => set("dueAt", e.target.value)} />
             </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-gray-500">Priority</label>
+            <select className={input} value={f.priority} onChange={(e) => set("priority", e.target.value)}>
+              {PRIORITIES.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-gray-500">Linked case (optional)</label>

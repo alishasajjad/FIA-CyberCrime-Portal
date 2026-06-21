@@ -11,6 +11,8 @@ const REMINDER_CATEGORIES = [
   "Custom",
 ];
 
+const REMINDER_PRIORITIES = ["Low", "Medium", "High"];
+
 const reminderSchema = new mongoose.Schema(
   {
     officer: {
@@ -26,6 +28,12 @@ const reminderSchema = new mongoose.Schema(
       default: "Custom",
     },
     notes: { type: String, default: "", trim: true },
+    // Priority level (additive; legacy reminders default to Medium).
+    priority: {
+      type: String,
+      enum: REMINDER_PRIORITIES,
+      default: "Medium",
+    },
     // Optional link to a complaint the officer is working on.
     complaint: { type: mongoose.Schema.Types.ObjectId, ref: "Complaint" },
     complaintRef: { type: String, default: "", trim: true },
@@ -33,12 +41,17 @@ const reminderSchema = new mongoose.Schema(
     allDay: { type: Boolean, default: false },
     completed: { type: Boolean, default: false },
     completedAt: { type: Date },
+    // Set once a due/overdue notification has been generated, preventing
+    // duplicate alerts from the reminder sweep.
+    dueNotified: { type: Boolean, default: false },
   },
   { timestamps: true, collection: "reminders" }
 );
 
 reminderSchema.index({ officer: 1, dueAt: 1 });
 reminderSchema.index({ officer: 1, completed: 1 });
+reminderSchema.index({ completed: 1, dueNotified: 1, dueAt: 1 });
 
 module.exports = mongoose.model("Reminder", reminderSchema);
 module.exports.REMINDER_CATEGORIES = REMINDER_CATEGORIES;
+module.exports.REMINDER_PRIORITIES = REMINDER_PRIORITIES;

@@ -18,6 +18,7 @@ import SecurityGuidelines from "views/public/SecurityGuidelines";
 import Blog from "views/public/Blog";
 import EmergencyHelp from "views/public/EmergencyHelp";
 import DataPrivacy from "views/public/DataPrivacy";
+import NotFound from "views/public/NotFound";
 
 const publicRoutes = [
   { path: "/", element: <Home /> },
@@ -37,6 +38,7 @@ const publicRoutes = [
   { path: "/blog", element: <Blog /> },
   { path: "/hotline", element: <EmergencyHelp /> },
   { path: "/privacy", element: <DataPrivacy /> },
+  { path: "*", element: <NotFound /> },
 ];
 
 export default publicRoutes;

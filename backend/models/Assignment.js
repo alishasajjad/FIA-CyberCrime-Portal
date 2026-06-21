@@ -17,6 +17,14 @@ const assignmentSchema = new mongoose.Schema(
       enum: ["Assigned", "In Progress", "Completed"],
       default: "Assigned",
     },
+    // Officer acceptance lifecycle (additive; legacy docs default to "Pending").
+    response: {
+      type: String,
+      enum: ["Pending", "Accepted", "Rejected"],
+      default: "Pending",
+    },
+    rejectionReason: { type: String, default: "" },
+    respondedAt: { type: Date },
     notes: { type: String, default: "" },
   },
   { timestamps: true, collection: "assignments" }

@@ -24,6 +24,7 @@ export default function ContactSection() {
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
+          id="contact-heading"
           eyebrow="Contact"
           title="Get In Touch"
           subtitle="Reach our support team for portal assistance, general inquiries, or technical help."

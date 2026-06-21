@@ -1,5 +1,7 @@
 const SupportTicket = require("../models/SupportTicket");
 const { createNotification } = require("../utils/notify");
+const { recordAudit } = require("../utils/audit");
+const { emitToRole } = require("../utils/realtime");
 const Faq = require("../models/Faq");
 
 async function createTicket(req, res) {
@@ -26,6 +28,17 @@ async function createTicket(req, res) {
       type: "Support",
       meta: { ticketId: saved._id, status: saved.status },
     });
+
+    recordAudit({
+      req,
+      action: "SUPPORT_TICKET_CREATED",
+      entityType: "SupportTicket",
+      entityId: saved._id,
+      summary: `Support ticket created — "${saved.subject}" (${saved.category})`,
+      meta: { ticketId: saved._id },
+    });
+
+    emitToRole("Admin", "ticket:updated", { ticketId: String(saved._id), status: saved.status });
 
     return res.status(201).json({ ticket: saved });
   } catch (err) {
@@ -68,6 +81,17 @@ async function updateTicket(req, res) {
         meta: { ticketId: ticket._id, status: ticket.status },
       });
     }
+
+    recordAudit({
+      req,
+      action: "SUPPORT_TICKET_UPDATED",
+      entityType: "SupportTicket",
+      entityId: ticket._id,
+      summary: `Support ticket "${ticket.subject}" updated to ${ticket.status}`,
+      meta: { ticketId: ticket._id, status: ticket.status },
+    });
+
+    emitToRole("Admin", "ticket:updated", { ticketId: String(ticket._id), status: ticket.status });
 
     return res.json({ ticket });
   } catch (err) {

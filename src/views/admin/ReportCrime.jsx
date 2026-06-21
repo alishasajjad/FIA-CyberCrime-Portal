@@ -1,5 +1,5 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "services/api";
 import { CITY_NAMES } from "constants/cities";
 import {
@@ -13,6 +13,10 @@ import {
   MdPlayArrow,
   MdCloudDone,
 } from "react-icons/md";
+
+// Local mirror so an in-progress complaint survives refresh / accidental
+// navigation even before the debounced server autosave fires.
+const LS_KEY = "ccrp_report_draft";
 
 const INCIDENT_TYPES = [
   "Phishing / Scam",
@@ -38,10 +42,12 @@ const inputClass =
 
 const ReportCrime = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [form, setForm] = React.useState(initialForm);
   const [errors, setErrors] = React.useState({});
   const [submitting, setSubmitting] = React.useState(false);
   const [submitted, setSubmitted] = React.useState(null);
+  const [restored, setRestored] = React.useState(false);
 
   // Draft system state
   const [draftId, setDraftId] = React.useState(null);
@@ -50,10 +56,15 @@ const ReportCrime = () => {
   const [draftStatus, setDraftStatus] = React.useState("idle"); // idle | saving | saved
   const draftIdRef = React.useRef(null);
   const dirtyRef = React.useRef(false);
+  const formRef = React.useRef(form);
 
   React.useEffect(() => {
     draftIdRef.current = draftId;
   }, [draftId]);
+
+  React.useEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
   const loadDrafts = React.useCallback(async () => {
     try {
@@ -97,6 +108,87 @@ const ReportCrime = () => {
     return () => clearTimeout(t);
   }, [form, submitted, persistDraft]);
 
+  // Restore an in-progress complaint on mount: an explicit ?draft=<id> wins
+  // (used by the Drafts management page), otherwise fall back to the local
+  // autosave snapshot so nothing is lost on refresh / accidental navigation.
+  React.useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const draftParam = searchParams.get("draft");
+      if (draftParam) {
+        try {
+          const data = await apiFetch(`/drafts/${draftParam}`);
+          if (!cancelled && data?.draft) {
+            setForm({ ...initialForm, ...(data.draft.data || {}) });
+            setDraftId(data.draft._id);
+            setDraftStatus("saved");
+          }
+        } catch {
+          /* draft no longer exists — ignore */
+        }
+        const next = new URLSearchParams(searchParams);
+        next.delete("draft");
+        setSearchParams(next, { replace: true });
+        if (!cancelled) setRestored(true);
+        return;
+      }
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (raw) {
+          const snap = JSON.parse(raw);
+          if (snap?.data && hasContent({ ...initialForm, ...snap.data })) {
+            setForm({ ...initialForm, ...snap.data });
+            if (snap.draftId) setDraftId(snap.draftId);
+            setDraftStatus("saved");
+          }
+        }
+      } catch {
+        /* corrupt snapshot — ignore */
+      }
+      if (!cancelled) setRestored(true);
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mirror the working form to localStorage for instant refresh safety.
+  React.useEffect(() => {
+    if (!restored || submitted) return;
+    try {
+      if (hasContent(form)) {
+        localStorage.setItem(
+          LS_KEY,
+          JSON.stringify({ data: form, draftId: draftIdRef.current })
+        );
+      } else {
+        localStorage.removeItem(LS_KEY);
+      }
+    } catch {
+      /* ignore storage quota errors */
+    }
+  }, [form, restored, submitted]);
+
+  // Flush the latest snapshot synchronously right before the page unloads.
+  React.useEffect(() => {
+    const onBeforeUnload = () => {
+      try {
+        if (!submitted && hasContent(formRef.current)) {
+          localStorage.setItem(
+            LS_KEY,
+            JSON.stringify({ data: formRef.current, draftId: draftIdRef.current })
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [submitted]);
+
   const continueDraft = (d) => {
     setForm({ ...initialForm, ...(d.data || {}) });
     setDraftId(d._id);
@@ -120,6 +212,11 @@ const ReportCrime = () => {
     setDraftId(null);
     setErrors({});
     setDraftStatus("idle");
+    try {
+      localStorage.removeItem(LS_KEY);
+    } catch {
+      /* ignore */
+    }
   };
 
   const update = (key) => (e) => {
@@ -163,6 +260,11 @@ const ReportCrime = () => {
         },
       });
       setSubmitted(data?.complaint || { referenceId: "submitted" });
+      try {
+        localStorage.removeItem(LS_KEY);
+      } catch {
+        /* ignore */
+      }
       // Discard the working draft once the complaint is filed.
       if (draftIdRef.current) {
         try {

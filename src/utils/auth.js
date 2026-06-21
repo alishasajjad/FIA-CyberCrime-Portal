@@ -43,5 +43,11 @@ export async function clearSession() {
   } catch {
     // Still clear local token even if server logout fails (offline/expired).
   }
+  try {
+    const { disconnectSocket } = await import("services/socket");
+    disconnectSocket();
+  } catch {
+    // realtime is optional
+  }
   localStorage.removeItem(TOKEN_KEY);
 }

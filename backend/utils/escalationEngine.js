@@ -4,6 +4,8 @@ const Assignment = require("../models/Assignment");
 const EscalationConfig = require("../models/EscalationConfig");
 const EscalationLog = require("../models/EscalationLog");
 const { createNotification } = require("./notify");
+const { recordAudit } = require("./audit");
+const { emitToRole } = require("./realtime");
 
 const OPEN_STATUSES = ["Pending", "In Review", "Under Investigation"];
 const DEFAULT_SLA = { Critical: 24, High: 48, Medium: 96, Low: 168 };
@@ -141,6 +143,25 @@ async function runEscalationCycle(options = {}) {
         complaint: c._id, referenceId: c.referenceId, level: newLevel, type: "Triggered",
         reason, severity: c.severity, slaHours, ageHours: Number(ageHours.toFixed(1)),
         fromOfficer: prevOfficer, city: c.city, category: c.incidentType,
+      });
+
+      recordAudit({
+        action: "ESCALATION",
+        entityType: "Complaint",
+        entityId: c._id,
+        complaint: c._id,
+        actorName: "Escalation Engine",
+        actorRole: "System",
+        summary: `Complaint ${c.referenceId} escalated to L${newLevel} — ${reason}`,
+        meta: { level: newLevel, severity: c.severity, slaHours },
+      });
+
+      emitToRole("Admin", "escalation:alert", {
+        complaintId: String(c._id),
+        referenceId: c.referenceId,
+        level: newLevel,
+        severity: c.severity,
+        reason,
       });
 
       let reassignedTo = null;

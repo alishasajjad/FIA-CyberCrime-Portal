@@ -24,6 +24,7 @@ export default function StatsSection() {
       />
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
+          id="stats-heading"
           eyebrow="Impact"
           title="Portal Statistics"
           subtitle="Trusted by citizens nationwide for secure cyber crime reporting and resolution."

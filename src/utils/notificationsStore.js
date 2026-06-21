@@ -1,13 +1,14 @@
 import { useSyncExternalStore } from "react";
 import { apiFetch } from "services/api";
+import { connectSocket, onSocket } from "services/socket";
 
-// Single shared notifications poller. Components subscribe via the hooks
-// below, so the app polls the real /notifications endpoint only once
-// regardless of how many badges/menus are mounted.
+// Single shared notifications store. Updates arrive instantly over Socket.IO;
+// a slow poll remains as a safe fallback when the socket is unavailable.
 let state = { notifications: [], unread: 0, loaded: false };
 const listeners = new Set();
 let timer = null;
-const POLL_MS = 10000;
+let socketCleanups = [];
+const POLL_MS = 30000;
 
 function emit() {
   listeners.forEach((l) => l());
@@ -42,6 +43,10 @@ function start() {
   if (timer) return;
   refreshNotifications();
   timer = setInterval(refreshNotifications, POLL_MS);
+  // Instant delivery + catch-up on (re)connect.
+  connectSocket();
+  socketCleanups.push(onSocket("notification:new", refreshNotifications));
+  socketCleanups.push(onSocket("connect", refreshNotifications));
 }
 
 function stop() {
@@ -49,6 +54,8 @@ function stop() {
     clearInterval(timer);
     timer = null;
   }
+  socketCleanups.forEach((fn) => fn());
+  socketCleanups = [];
 }
 
 function subscribe(cb) {

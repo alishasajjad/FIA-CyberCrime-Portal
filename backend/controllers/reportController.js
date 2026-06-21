@@ -556,6 +556,7 @@ async function getAdvancedAnalytics(req, res) {
       total,
       byCityAgg,
       byCategoryAgg,
+      byDepartmentAgg,
       bySeverityAgg,
       byStatusAgg,
       byMonthAgg,
@@ -574,6 +575,7 @@ async function getAdvancedAnalytics(req, res) {
       Complaint.countDocuments(match),
       Complaint.aggregate(groupCount("city")),
       Complaint.aggregate(groupCount("incidentType")),
+      Complaint.aggregate(groupCount("department")),
       Complaint.aggregate(groupCount("severity")),
       Complaint.aggregate(groupCount("status")),
       Complaint.aggregate([
@@ -647,6 +649,7 @@ async function getAdvancedAnalytics(req, res) {
       total,
       byCity: byCityAgg.map((c) => ({ city: c._id || "Unspecified", count: c.count })),
       byCategory: byCategoryAgg.map((c) => ({ category: c._id || "Other", count: c.count })),
+      byDepartment: byDepartmentAgg.map((c) => ({ department: c._id || "Unassigned", count: c.count })),
       bySeverity: bySeverityAgg.map((c) => ({ severity: c._id || "Unknown", count: c.count })),
       byStatus: byStatusAgg.map((c) => ({ status: c._id || "Unknown", count: c.count })),
       byMonth: byMonthAgg.map((d) => ({ label: monthLabel(d), count: d.count })),

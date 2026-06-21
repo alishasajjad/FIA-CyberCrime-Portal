@@ -16,10 +16,10 @@ export function Skeleton({ className = "" }) {
 export function CardSkeleton({ lines = 3 }) {
   return (
     <div className="rounded-2xl bg-white p-6 shadow-md shadow-shadow-500 dark:bg-navy-800">
-      <Skeleton className="h-5 w-1/3" />
+      <Skeleton className="h-6 w-1/3" />
       <div className="mt-4 space-y-3">
         {Array.from({ length: lines }).map((_, i) => (
-          <Skeleton key={i} className={`h-4 ${i % 2 ? "w-2/3" : "w-full"}`} />
+          <Skeleton key={i} className={`h-3.5 ${i % 2 ? "w-2/3" : "w-full"}`} />
         ))}
       </div>
     </div>
@@ -51,11 +51,11 @@ export function EmptyState({ icon: Icon, title, message, action }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50/60 px-6 py-12 text-center dark:border-navy-700 dark:bg-navy-900/30">
       {Icon ? (
-        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-600/10 text-brand-600 dark:text-brand-400">
-          <Icon className="h-7 w-7" aria-hidden />
+        <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-600/10 text-brand-600 dark:text-brand-400">
+          <Icon className="h-8 w-8" aria-hidden />
         </span>
       ) : null}
-      <p className="mt-4 text-base font-bold text-navy-900 dark:text-white">
+      <p className="mt-4 text-lg font-bold text-navy-900 dark:text-white">
         {title}
       </p>
       {message ? (
@@ -93,7 +93,14 @@ export function StatCard({ icon: Icon, label, value, hint, accent = "brand", loa
         {loading ? (
           <Skeleton className="mt-1.5 h-7 w-16" />
         ) : (
-          <p className="mt-0.5 text-2xl font-bold text-navy-900 dark:text-white">
+          <p
+            className="mt-0.5 truncate text-2xl font-bold text-navy-900 dark:text-white"
+            title={
+              typeof value === "string" || typeof value === "number"
+                ? String(value)
+                : undefined
+            }
+          >
             {value}
           </p>
         )}

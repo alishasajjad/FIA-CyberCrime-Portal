@@ -42,6 +42,7 @@ export default function WorkflowSection() {
     <section className="py-20 md:py-28" aria-labelledby="workflow-heading">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
+          id="workflow-heading"
           eyebrow="How It Works"
           title="Complaint Workflow"
           subtitle="A transparent, step-by-step process from report submission to case resolution."

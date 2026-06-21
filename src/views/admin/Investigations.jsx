@@ -10,6 +10,7 @@ import {
   TableSkeleton,
 } from "components/ui";
 import CaseTimeline from "components/ui/CaseTimeline";
+import EvidenceThread from "components/ui/EvidenceThread";
 import { useReminders } from "utils/remindersStore";
 import { categoryOf } from "constants/reminderCategories";
 import {
@@ -26,6 +27,8 @@ import {
   MdAlarm,
   MdToday,
   MdArrowForward,
+  MdClose,
+  MdCloudUpload,
 } from "react-icons/md";
 
 const statusOptions = [
@@ -55,13 +58,29 @@ const Investigations = () => {
   const [messages, setMessages] = React.useState([]);
   const [evidence, setEvidence] = React.useState([]);
   const [detailLoading, setDetailLoading] = React.useState(false);
+  const [assignmentMap, setAssignmentMap] = React.useState({});
+  const [responding, setResponding] = React.useState(false);
+  const [rejecting, setRejecting] = React.useState(false);
+  const [rejectReason, setRejectReason] = React.useState("");
+  const [evidenceUploading, setEvidenceUploading] = React.useState(false);
 
   const fetchAssigned = async () => {
     setLoading(true);
     try {
-      const data = await apiFetch("/complaints/assigned");
+      const [data, assignData] = await Promise.all([
+        apiFetch("/complaints/assigned"),
+        apiFetch("/assignments/my").catch(() => ({ assignments: [] })),
+      ]);
       const list = Array.isArray(data?.complaints) ? data.complaints : [];
       setComplaints(list);
+
+      const map = {};
+      (Array.isArray(assignData?.assignments) ? assignData.assignments : []).forEach((a) => {
+        const cid = a.complaint?._id || a.complaint;
+        if (cid) map[cid] = { _id: a._id, response: a.response || "Pending", status: a.status };
+      });
+      setAssignmentMap(map);
+
       setSelectedId((prev) => {
         if (prev && list.some((c) => c._id === prev)) return prev;
         return list[0]?._id || "";
@@ -150,6 +169,81 @@ const Investigations = () => {
     if (name && m.senderRole) return `${name} (${m.senderRole})`;
     return name || m.senderRole || "Participant";
   };
+
+  const handleAccept = async () => {
+    if (!active) return;
+    setResponding(true);
+    try {
+      await apiFetch(`/complaints/${active._id}/respond`, {
+        method: "POST",
+        body: { action: "accept" },
+      });
+      await fetchAssigned();
+    } catch (err) {
+      window.alert(err?.message || "Could not accept assignment");
+    } finally {
+      setResponding(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!active) return;
+    const reason = rejectReason.trim();
+    if (reason.length < 3) {
+      window.alert("Please provide a rejection reason (at least 3 characters).");
+      return;
+    }
+    setResponding(true);
+    try {
+      await apiFetch(`/complaints/${active._id}/respond`, {
+        method: "POST",
+        body: { action: "reject", reason },
+      });
+      setRejecting(false);
+      setRejectReason("");
+      await fetchAssigned();
+    } catch (err) {
+      window.alert(err?.message || "Could not reject assignment");
+    } finally {
+      setResponding(false);
+    }
+  };
+
+  const handleEvidenceUpload = async () => {
+    if (!active) return;
+    const input = document.getElementById("invEvidenceFiles");
+    const files = input?.files ? Array.from(input.files) : [];
+    const note = document.getElementById("invEvidenceMessage")?.value?.trim() || "";
+    if (files.length === 0) {
+      window.alert("Choose at least one file to attach.");
+      return;
+    }
+    setEvidenceUploading(true);
+    try {
+      const formData = new FormData();
+      files.forEach((f) => formData.append("evidenceFiles", f));
+      if (note) formData.append("message", note);
+      await apiFetch(`/complaints/${active._id}/evidence`, {
+        method: "POST",
+        body: formData,
+      });
+      if (input) input.value = "";
+      const msgEl = document.getElementById("invEvidenceMessage");
+      if (msgEl) msgEl.value = "";
+      await loadCaseDetail(active._id);
+    } catch (err) {
+      window.alert(err?.message || "Upload error");
+    } finally {
+      setEvidenceUploading(false);
+    }
+  };
+
+  const activeAssignment = active ? assignmentMap[active._id] : null;
+  const needsResponse =
+    !!active &&
+    !!activeAssignment &&
+    activeAssignment.response !== "Accepted" &&
+    !["Resolved", "Closed"].includes(active.status);
 
   // Workload metrics
   const total = complaints.length;
@@ -374,7 +468,17 @@ const Investigations = () => {
               <SectionCard
                 title={active.referenceId || active._id}
                 subtitle={`${active.incidentType}${active.city ? ` · ${active.city}` : ""}`}
-                action={<StatusBadge status={active.status} />}
+                action={
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/admin/complaint/${active._id}`}
+                      className="inline-flex items-center gap-1 rounded-lg border border-brand-200 px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-brand-900/40 dark:text-brand-300 dark:hover:bg-navy-900"
+                    >
+                      Full details <MdArrowForward className="h-3.5 w-3.5" aria-hidden />
+                    </Link>
+                    <StatusBadge status={active.status} />
+                  </div>
+                }
               >
                 <div className="grid gap-6 md:grid-cols-2">
                   <div>
@@ -392,6 +496,88 @@ const Investigations = () => {
                   </div>
                 </div>
               </SectionCard>
+
+              {/* Assignment response (Accept / Reject) */}
+              {needsResponse ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/20">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                        <MdPendingActions className="h-6 w-6" aria-hidden />
+                      </span>
+                      <div>
+                        <p className="text-sm font-bold text-navy-900 dark:text-white">
+                          Assignment awaiting your response
+                        </p>
+                        <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-300">
+                          Accept to begin the investigation, or reject to return
+                          this case to the admin assignment queue.
+                        </p>
+                      </div>
+                    </div>
+                    {!rejecting ? (
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAccept}
+                          disabled={responding}
+                          className="flex items-center gap-1.5 rounded-xl bg-brand-700 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 dark:bg-brand-600 dark:hover:bg-brand-500"
+                        >
+                          <MdCheckCircle className="h-4 w-4" aria-hidden /> Accept
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRejecting(true)}
+                          disabled={responding}
+                          className="flex items-center gap-1.5 rounded-xl border border-red-300 px-5 py-2.5 text-sm font-bold text-red-700 transition hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400 disabled:opacity-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
+                        >
+                          <MdClose className="h-4 w-4" aria-hidden /> Reject
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  {rejecting ? (
+                    <div className="mt-4">
+                      <label className="mb-1.5 block text-sm font-bold text-gray-700 dark:text-gray-200">
+                        Reason for rejection (sent to admin)
+                      </label>
+                      <textarea
+                        rows="3"
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        placeholder="e.g. Outside my department's scope; lacking jurisdiction; conflict of interest."
+                        className="w-full rounded-xl border border-gray-200 bg-white p-3.5 text-sm text-navy-900 outline-none focus:ring-2 focus:ring-red-400 dark:border-white/10 dark:bg-navy-900 dark:text-white"
+                      />
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRejecting(false);
+                            setRejectReason("");
+                          }}
+                          disabled={responding}
+                          className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-semibold text-navy-900 transition hover:bg-gray-50 disabled:opacity-50 dark:border-navy-600 dark:text-white dark:hover:bg-navy-900"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleReject}
+                          disabled={responding}
+                          className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 disabled:opacity-50"
+                        >
+                          {responding ? "Submitting…" : "Confirm Rejection"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : activeAssignment?.response === "Accepted" ? (
+                <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50/70 px-4 py-2.5 text-sm font-semibold text-green-700 dark:border-green-900/40 dark:bg-green-950/20 dark:text-green-300">
+                  <MdCheckCircle className="h-4 w-4" aria-hidden /> You accepted this
+                  assignment.
+                </div>
+              ) : null}
 
               {/* Update form (logic preserved) */}
               <SectionCard title="Update Case">
@@ -429,29 +615,48 @@ const Investigations = () => {
               </SectionCard>
 
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                {/* Evidence panel */}
-                <SectionCard title={<span className="flex items-center gap-2"><MdAttachFile className="h-5 w-5 text-brand-600" /> Evidence Review</span>}>
-                  {detailLoading ? (
-                    <TableSkeleton rows={3} cols={1} />
-                  ) : evidence.length === 0 ? (
-                    <EmptyState icon={MdAttachFile} title="No evidence" message="No files have been uploaded for this case." />
-                  ) : (
-                    <ul className="space-y-2">
-                      {evidence.map((ev) => (
-                        <li key={ev._id} className="flex items-center justify-between gap-3 rounded-xl border border-gray-150 bg-gray-50/60 p-3 dark:border-navy-700 dark:bg-navy-900/40">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-navy-900 dark:text-white">{ev.originalName}</p>
-                            <p className="text-xs text-gray-500">{ev.mimeType} · {Number(ev.size || 0).toLocaleString()} bytes</p>
-                          </div>
-                          {ev.fileUrl ? (
-                            <a href={ev.fileUrl} target="_blank" rel="noreferrer" className="shrink-0 text-sm font-bold text-brand-700 hover:underline dark:text-brand-400">View</a>
-                          ) : (
-                            <span className="text-xs text-gray-400">N/A</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                {/* Evidence thread + combined upload */}
+                <SectionCard title={<span className="flex items-center gap-2"><MdAttachFile className="h-5 w-5 text-brand-600" /> Evidence & Case Files</span>}>
+                  <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 p-3.5 dark:border-navy-700 dark:bg-navy-900/30">
+                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-gray-500">
+                      Add evidence with a note
+                    </label>
+                    <input
+                      id="invEvidenceFiles"
+                      type="file"
+                      multiple
+                      key={`ev-${active._id}`}
+                      className="w-full rounded-lg border border-gray-200 bg-white p-2.5 text-sm text-navy-900 outline-none focus:ring-2 focus:ring-brand-500 dark:border-white/10 dark:bg-navy-900 dark:text-white"
+                    />
+                    <textarea
+                      id="invEvidenceMessage"
+                      rows="2"
+                      key={`evm-${active._id}`}
+                      placeholder="Add a written note describing this evidence (optional)…"
+                      className="mt-2 w-full rounded-lg border border-gray-200 bg-white p-2.5 text-sm text-navy-900 outline-none focus:ring-2 focus:ring-brand-500 dark:border-white/10 dark:bg-navy-900 dark:text-white"
+                    />
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleEvidenceUpload}
+                        disabled={evidenceUploading}
+                        className="flex items-center gap-1.5 rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 dark:bg-brand-600 dark:hover:bg-brand-500"
+                      >
+                        <MdCloudUpload className="h-4 w-4" aria-hidden />
+                        {evidenceUploading ? "Uploading…" : "Submit Evidence"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    {detailLoading ? (
+                      <TableSkeleton rows={3} cols={1} />
+                    ) : (
+                      <EvidenceThread
+                        items={evidence}
+                        emptyHint="No files have been submitted for this case yet."
+                      />
+                    )}
+                  </div>
                 </SectionCard>
 
                 {/* Communication */}

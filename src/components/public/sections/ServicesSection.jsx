@@ -55,6 +55,7 @@ export default function ServicesSection() {
     <section className="py-20 md:py-28" aria-labelledby="services-heading">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
+          id="services-heading"
           eyebrow="Our Services"
           title="Comprehensive Cyber Crime Services"
           subtitle="End-to-end support for citizens, from reporting incidents to resolution and prevention."

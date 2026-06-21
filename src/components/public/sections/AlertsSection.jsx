@@ -49,6 +49,7 @@ export default function AlertsSection() {
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
+          id="alerts-heading"
           eyebrow="Cyber Alerts"
           title="Latest Cyber Safety Alerts"
           subtitle="Stay updated on emerging threats and official security advisories."
@@ -61,7 +62,7 @@ export default function AlertsSection() {
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}
-              className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-navy-700 dark:bg-navy-800"
+              className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg dark:border-navy-700 dark:bg-navy-800"
             >
               <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 dark:border-navy-700">
                 <span className="text-xs font-semibold uppercase tracking-wider text-brand-600">

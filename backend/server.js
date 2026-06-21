@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 // Load .env before appConfig or any module that reads process.env
 dotenv.config({ path: path.join(__dirname, ".env") });
 
+const http = require("http");
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -23,7 +24,11 @@ const draftRoutes = require("./routes/draftRoutes");
 const otpRoutes = require("./routes/otpRoutes");
 const reminderRoutes = require("./routes/reminderRoutes");
 const escalationRoutes = require("./routes/escalationRoutes");
+const searchRoutes = require("./routes/searchRoutes");
+const auditRoutes = require("./routes/auditRoutes");
 const { runEscalationCycle } = require("./utils/escalationEngine");
+const { runReminderSweep } = require("./utils/reminderEngine");
+const { initRealtime, emitToRole } = require("./utils/realtime");
 const { seedDefaultAdmin } = require("./utils/seedAdmin");
 const { seedDefaultFaq } = require("./utils/seedFaq");
 
@@ -74,6 +79,8 @@ app.use("/api/drafts", draftRoutes);
 app.use("/api/otp", otpRoutes);
 app.use("/api/reminders", reminderRoutes);
 app.use("/api/escalations", escalationRoutes);
+app.use("/api/search", searchRoutes);
+app.use("/api/audit-logs", auditRoutes);
 
 app.get("/api/health", (req, res) =>
   res.json({
@@ -110,6 +117,8 @@ mongoose.connection.on("disconnected", () => {
 
 let server;
 let escalationTimer = null;
+let reminderTimer = null;
+let heartbeatTimer = null;
 
 // Background escalation scheduler — evaluates SLA breaches on an interval.
 function startEscalationScheduler() {
@@ -124,6 +133,29 @@ function startEscalationScheduler() {
   }, intervalMs);
   escalationTimer.unref?.();
   console.log(`[Escalation] Scheduler started (every ${minutes} min)`);
+}
+
+// Background reminder scheduler — notifies officers of due/overdue reminders.
+function startReminderScheduler() {
+  const minutes = Math.max(1, Number(process.env.REMINDER_INTERVAL_MIN) || 5);
+  const intervalMs = minutes * 60 * 1000;
+  setTimeout(() => {
+    runReminderSweep().catch((e) => console.warn("[Reminder] initial run:", e?.message || e));
+  }, 25 * 1000).unref();
+  reminderTimer = setInterval(() => {
+    runReminderSweep().catch((e) => console.warn("[Reminder] scheduled run:", e?.message || e));
+  }, intervalMs);
+  reminderTimer.unref?.();
+  console.log(`[Reminder] Scheduler started (every ${minutes} min)`);
+}
+
+// Lightweight realtime heartbeat — nudges admin System Health dashboards to
+// refresh live without per-client polling.
+function startRealtimeHeartbeat() {
+  heartbeatTimer = setInterval(() => {
+    emitToRole("Admin", "health:tick", { at: Date.now() });
+  }, 15 * 1000);
+  heartbeatTimer.unref?.();
 }
 
 async function bootstrap() {
@@ -158,7 +190,10 @@ async function bootstrap() {
     console.warn("[SeedFAQ] Seed failed:", err?.message || err)
   );
 
-  server = app.listen(appConfig.port, () => {
+  const httpServer = http.createServer(app);
+  initRealtime(httpServer);
+
+  server = httpServer.listen(appConfig.port, () => {
     console.log(`[Server] Listening on port ${appConfig.port}`);
     console.log(
       `[Upload Limits] per-file=${appConfig.upload.maxFileSizeMb}MB total=${appConfig.upload.maxTotalUploadMb}MB files=${appConfig.upload.maxFilesPerRequest}`
@@ -167,6 +202,8 @@ async function bootstrap() {
       `[Session] httpOnly cookie "${appConfig.session.cookieName}" enabled (JWT RBAC preserved)`
     );
     startEscalationScheduler();
+    startReminderScheduler();
+    startRealtimeHeartbeat();
   });
 }
 
@@ -178,6 +215,8 @@ bootstrap().catch((err) => {
 function gracefulShutdown(signal) {
   console.warn(`[Server] ${signal} received. Shutting down gracefully...`);
   if (escalationTimer) clearInterval(escalationTimer);
+  if (reminderTimer) clearInterval(reminderTimer);
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
   if (!server) {
     mongoose.connection.close().finally(() => process.exit(0));
     return;

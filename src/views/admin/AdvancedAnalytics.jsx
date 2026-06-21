@@ -94,6 +94,7 @@ export default function AdvancedAnalytics() {
       ]},
       { title: "By City", headers: ["City", "Count"], rows: data.byCity.map((c) => [c.city, c.count]) },
       { title: "By Category", headers: ["Category", "Count"], rows: data.byCategory.map((c) => [c.category, c.count]) },
+      { title: "By Department", headers: ["Department", "Count"], rows: (data.byDepartment || []).map((c) => [c.department, c.count]) },
       { title: "By Severity", headers: ["Severity", "Count"], rows: data.bySeverity.map((c) => [c.severity, c.count]) },
       { title: "By Status", headers: ["Status", "Count"], rows: data.byStatus.map((c) => [c.status, c.count]) },
       { title: "Monthly Trend", headers: ["Month", "Count"], rows: data.byMonth.map((m) => [m.label, m.count]) },
@@ -115,6 +116,7 @@ export default function AdvancedAnalytics() {
       ]) +
       tableHtml("By City", ["City", "Count"], data.byCity.map((c) => [c.city, c.count])) +
       tableHtml("By Category", ["Category", "Count"], data.byCategory.map((c) => [c.category, c.count])) +
+      tableHtml("By Department", ["Department", "Count"], (data.byDepartment || []).map((c) => [c.department, c.count])) +
       tableHtml("Officer Comparison", ["Officer", "Assigned", "Resolved", "Rate %"], data.officerComparison.map((o) => [o.name, o.assigned, o.resolved, o.resolutionRate]));
     printReport("FIA Advanced Analytics", body);
   };
@@ -239,6 +241,19 @@ export default function AdvancedAnalytics() {
                   />
                 </SectionCard>
               </div>
+
+              <SectionCard title="Department-wise Complaints" subtitle="Complaints grouped by the handling department">
+                <BarList
+                  items={(data.byDepartment || []).slice(0, 12)}
+                  labelKey="department"
+                  onItemClick={(it) =>
+                    setFilters((f) => ({
+                      ...f,
+                      department: it.department === "Unassigned" ? "" : it.department,
+                    }))
+                  }
+                />
+              </SectionCard>
 
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                 <SectionCard title="Severity Analysis">

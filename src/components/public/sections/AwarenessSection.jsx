@@ -56,6 +56,7 @@ export default function AwarenessSection() {
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
+          id="awareness-heading"
           eyebrow="Cyber Awareness"
           title="Stay Informed. Stay Protected."
           subtitle="Learn how to defend yourself against the most common cyber threats affecting citizens today."
@@ -68,7 +69,7 @@ export default function AwarenessSection() {
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.07 }}
-              className="overflow-hidden rounded-2xl bg-white shadow-md dark:bg-navy-800"
+              className="overflow-hidden rounded-2xl bg-white shadow-md transition-all hover:-translate-y-1 hover:shadow-lg dark:bg-navy-800"
             >
               <div className={`h-1.5 bg-gradient-to-r ${topic.color}`} />
               <div className="p-5">

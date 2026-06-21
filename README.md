@@ -1,838 +1,543 @@
-# MERN Cyber Crime Reporting System
+<div align="center">
 
-A full-stack cyber crime complaint management and investigation platform built using the MERN stack (**MongoDB Atlas**, **Express.js**, **React 19**, and **Node.js**). The platform utilizes **Horizon UI** with **Tailwind CSS** on the frontend and includes role-based access controls, officer approval workflows, an SLA-enforced automated escalation engine, comprehensive analytics, system health metrics, in-memory caching, secure session management, and robust file upload controls.
+# 🛡️ National Cyber Crime Reporting Portal
 
----
+### A government-grade platform for reporting, investigating, and resolving cyber crimes — built for the FIA Cyber Crime Wing, Government of Pakistan (PECA 2016).
 
-## Table of Contents
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![Node.js](https://img.shields.io/badge/Node.js-Express%205-339933?logo=node.js&logoColor=white)](https://expressjs.com/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
+[![Socket.IO](https://img.shields.io/badge/Realtime-Socket.IO-010101?logo=socketdotio&logoColor=white)](https://socket.io/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 
-1. [System Architecture](#system-architecture)
-2. [Module & Feature Specification](#module--feature-specification)
-3. [Dashboard Workspaces](#dashboard-workspaces)
-4. [SLA Escalation Engine (Phase D)](#sla-escalation-engine-phase-d)
-5. [Session & Authentication Security](#session--authentication-security)
-6. [Evidence Upload & Storage Controls](#evidence-upload--storage-controls)
-7. [Database Schema Reference](#database-schema-reference)
-8. [API Endpoints Reference](#api-endpoints-reference)
-9. [Performance, Caching & Testing](#performance-caching--testing)
-10. [Folder Structure](#folder-structure)
-11. [Setup & Installation](#setup--installation)
-12. [Troubleshooting & Maintenance](#troubleshooting--maintenance)
-13. [Production Deployment Notes](#production-deployment-notes)
+</div>
 
 ---
 
-## System Architecture
+## 📖 Table of Contents
 
-The application is split into a React-based single-page application (SPA) and an Express-based REST API, communicating via JSON payloads over HTTP.
-
-```
-[React SPA Frontend] --(apiFetch over HTTPS with credentials)--> [Express.js Backend API]
-  - Horizon UI & Tailwind CSS                                      - Port 5000 (Default)
-  - React Router v6 & Role Guards                                  - Security Middlewares (Helmet, CORS, Rate Limit)
-  - TanStack Table v8 & ApexCharts                                 - Central appConfig & Cookie Parser
-                                                                   - Async Handler & Centralized Error Handler
-                                                                        |
-                                                                        +---> [MongoDB Atlas Cluster]
-                                                                        |       - 17 Collections
-                                                                        |       - Custom Document Indexes
-                                                                        |       - Database Schema Validators
-                                                                        |
-                                                                        +---> [Local Disk Uploads]
-                                                                                - Safe Multipart Multer Storage
-                                                                                - Automated File Cleanup
-```
-
-### Key Architectural Layers
-1. **Frontend Services**: API calls are routed through a centralized helper `src/services/api.js` using `credentials: "include"`. This ensures HTTP-only cookies containing session identifiers are automatically sent with every request.
-2. **Security & Performance Middlewares**: Located in `backend/middleware/security.js`. It wraps requests with Helmet security headers, GZIP compression, a general rate limiter, an auth-specific rate limiter, and a request timeout handler to prevent hanging connections.
-3. **Session Verification**: The `authMiddleware` checks for the JWT in either the HTTP-only `ccrs_session` cookie or the HTTP `Authorization` header. It then queries the `sessions` collection to confirm the session is active and has not been revoked.
-4. **Data Aggregation and Caching**: The stats cache in `backend/utils/memoryCache.js` buffers high-frequency dashboard analytics requests with configurable time-to-live (TTL) thresholds, minimizing DB load.
-
----
-
-## Module & Feature Specification
-
-### 1. User Management & RBAC Workflow
-The system enforces Role-Based Access Control (RBAC) across four user roles:
-*   **User (Citizen)**: Can submit complaints, save drafts, track complaint status, upload evidence, and message investigators.
-*   **PendingOfficer**: A registered officer waiting for admin verification. Access to officer-only resources is blocked.
-*   **InvestigationOfficer**: An approved case handler who can update complaints, manage reminders, and view assignments in their assigned department/unit.
-*   **Admin**: Superuser with complete system control, user CRUD, officer approvals, calendar management, system health checks, escalations configurator, advanced analytics, and audit logs.
-
-#### Officer Registration and Approval Pipeline
-```
-[Officer Registers] ---> [User Created as PendingOfficer] ---> [Admin Review Dashboard]
-  - Submits Unit/Dept      - officerRequestStatus: "Pending"     - GET /api/users/officer-requests
-  - Submits CNIC/Phone     - isApprovedOfficer: false            - POST /api/users/:id/officer-review
-                                                                     |
-                                  +----------------------------------+----------------------------------+
-                                  | (Approve Action)                                                     | (Reject Action)
-                                  v                                                                      v
-                     [Role -> InvestigationOfficer]                                         [Role -> PendingOfficer]
-                     - isApprovedOfficer: true                                              - isApprovedOfficer: false
-                     - officerRequestStatus: "Approved"                                     - officerRequestStatus: "Rejected"
-                     - Assigned Unit/Department locked                                      - Notification Sent
-```
-*   **Token Verification**: If configured via `OFFICER_ENROLLMENT_TOKEN` in the environment, registration for `InvestigationOfficer` roles is strictly blocked unless the matching token is provided.
-*   **OTP Verification Simulation**: Registrants provide a phone number. An OTP simulation sends codes to Email/SMS notification stores. Verification updates `phoneVerified` to `true`.
-*   **CNIC Integrity**: Users are validated to ensure CNIC values are present and meet length requirements.
-
-### 2. Complaint Submission & Department Routing
-Citizens submit complaints by specifying details, location (city), severity, and category.
-*   **Auto-routing**: The backend dynamically infers the target `department` based on the incident type:
-    *   *phishing* / *scam* $\rightarrow$ **Phishing**
-    *   *fraud* $\rightarrow$ **Financial Fraud**
-    *   *account* $\rightarrow$ **Account Security**
-    *   *malware* / *ransom* $\rightarrow$ **Malware Analysis**
-    *   *harassment* / *abuse* $\rightarrow$ **Harassment**
-    *   *Default* $\rightarrow$ **General Cyber Crime**
-*   **Severity Autofill**: Severity defaults to **High** but is automatically adjusted to **Critical** for ransomware/ransom keywords, **High** for fraud/phishing/scams, or **Medium** for others.
-*   **Drafts System**: Users can save progressive edits as drafts under the `complaintdrafts` collection. Drafts persist across sessions and are converted to active complaints only upon formal submission.
-
-### 3. Investigation & Q&A Workspace
-*   **Assignments**: Admins assign cases to officers. The system enforces department matching: an officer can only be assigned to complaints matching their configured `unit` department.
-*   **Case Notes**: Append-only chronological case notes on complaints. Neither officers nor admins can modify or delete existing notes.
-*   **Q&A Messages**: A real-time message exchange module linked to the complaint, allowing users and investigators to communicate.
-*   **Reminders & Calendar**: Officers and Admins can schedule investigation deadlines, follow-ups, and user meetings on an interactive calendar.
+- [Project Overview](#-project-overview)
+- [Problem Statement](#-problem-statement)
+- [Solution Overview](#-solution-overview)
+- [Complete Feature List](#-complete-feature-list)
+  - [Public Website](#public-website-features)
+  - [User Panel](#user-panel-features)
+  - [Officer Panel](#officer-panel-features)
+  - [Admin Panel](#admin-panel-features)
+- [Complaint Lifecycle Workflow](#-complaint-lifecycle-workflow)
+- [Escalation Engine](#-escalation-engine)
+- [Real-Time Communication Architecture](#-real-time-communication-architecture)
+- [Audit Trail System](#-audit-trail-system)
+- [Evidence Management System](#-evidence-management-system)
+- [Support Ticket System](#-support-ticket-system)
+- [Analytics & Reporting](#-analytics--reporting)
+- [System Health Monitoring](#-system-health-monitoring)
+- [Authentication & RBAC](#-authentication--rbac)
+- [Technology Stack](#-technology-stack)
+- [System Architecture](#-system-architecture)
+- [Database Overview](#-database-overview)
+- [Folder Structure](#-folder-structure)
+- [Installation Guide](#-installation-guide)
+- [Environment Variables](#-environment-variables)
+- [MongoDB Atlas Configuration](#-mongodb-atlas-configuration)
+- [API Overview](#-api-overview)
+- [Socket Events](#-socket-events)
+- [Screenshots](#-screenshots)
+- [Deployment Guide](#-deployment-guide)
+- [Future Enhancements](#-future-enhancements)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Author](#-author)
 
 ---
 
-## Dashboard Workspaces
+## 🎯 Project Overview
 
-### Citizen Portal
-*   **Report Crime**: Submit new incidents with attachments.
-*   **Drafts Manager**: Retrieve and modify incomplete drafts.
-*   **Status Timeline Tracker**: An order-tracking-style progressive timeline highlighting complaint transitions from `Pending` $\rightarrow$ `In Review` $\rightarrow$ `Under Investigation` $\rightarrow$ `Resolved` / `Closed`.
-*   **Q&A Board**: Direct Q&A thread with the assigned officer.
+The **National Cyber Crime Reporting Portal** is a full-stack, enterprise-grade web application that lets citizens securely report cyber crimes, lets investigation officers manage cases end-to-end, and gives administrators full operational command over the platform.
 
-### Officer Workspace
-*   **Investigations Panel**: Access assigned cases and modify status.
-*   **Alert Center**: View system alerts and SLA approaching warnings.
-*   **Officer Calendar**: Set due dates, schedule events, and log internal reviews.
+It pairs a **premium public-facing website** (hero, services, awareness center, alerts, FAQs, contact, legal pages) with three **role-based dashboards** (User, Investigation Officer, Admin), a **real-time communication layer**, an **automated escalation engine**, a **persistent audit trail**, and **executive analytics** — all on a secure MongoDB Atlas backend.
 
-### Admin Control Panel
-1.  **Overview Dashboard**: Stat cards showing Total Complaints, Pending Cases, Resolved Cases, and High Severity Alerts, alongside a tabular list of recent complaints and a quick-assign panel.
-2.  **User & Officer Manager**: Complete user database control, editing roles/status, and reviewing pending officer requests with approval/rejection logging.
-3.  **System Health**: Real-time operational metrics:
-    *   *Application Uptime & Environment*
-    *   *Database Connection State & Pools*
-    *   *API Throughput* (24h, 7d, 30d write actions)
-    *   *Active Session Counts & Online Officer Estimates*
-    *   *Evidence Upload Footprint* (Total files & disk storage size)
-    *   *SLA compliance percentages*
-4.  **Advanced Analytics**:
-    *   *Filters*: Scope reports by date range (from/to), city, category, officer, status, and department.
-    *   *Visuals*: Trend charts, donut charts for severities, and bar charts for categories.
-    *   *Exporters*: Generate print-ready summaries, export clean CSV files, and generate client-side PDFs.
-5.  **Officer Performance**: Tabular evaluation ranking officers by assigned cases, resolved cases, resolution rates, and average resolution times in hours.
-6.  **Escalations Control**: Configurator for adjusting global SLA parameters and triggering manual engine cycles.
-7.  **Audit Log Feed**: Real-time event log tracking Registration, Complaint, Resolution, Assignment, Evidence, Message, Escalation, and Account events, exportable to CSV.
+The design language is consistent throughout: a government green / navy palette, glassmorphism, accessible components, smooth motion, dark mode, and mobile-first responsiveness.
 
 ---
 
-## SLA Escalation Engine (Phase D)
+## ❓ Problem Statement
 
-The system features an automated SLA evaluation and reassignment cycle to ensure critical complaints do not breach response deadlines.
+Cyber crime reporting in many regions suffers from:
 
-```
-       [SLA Cycle Fired] ---> Checks All Open Complaints ("Pending", "In Review", "Under Investigation")
-                                  |
-            +---------------------+---------------------+
-            |                                           |
-     (SLA Deadline Passed)                       (SLA Approaching)
-            |                                           v
-            v                                  [Dispatch SLA Warning]
-     [Trigger SLA Breach]                      - Sets `slaWarnedAt`
-     - Increment Escalation Level (Max 3)      - Logs Warning event
-     - Write immutable Escalation Log          - Notifies Officer via In-App Alert
-     - Notify Administrators                   
-            |
-            +---> Auto-Reassignment Enabled?
-                    |
-                    +---> YES ---> [Select Eligible Senior Officer]
-                    |                - Must match Complaint Department
-                    |                - Prioritizes most resolved cases (experience)
-                    |                - Breaks ties by lightest current open workload
-                    |                - Reassigns case, updates Assignment, notifies Officer
-                    |
-                    +---> NO  ---> [Queue Escalation]
-                                     - Places complaint in active Escalations Queue
-```
-
-### 1. SLA Thresholds
-SLA thresholds are defined by severity:
-*   **Critical**: 24 Hours
-*   **High**: 48 Hours
-*   **Medium**: 96 Hours
-*   **Low**: 168 Hours
-
-### 2. Escalation Configuration Properties (`EscalationConfig`)
-Admins manage a global configuration document with the following properties:
-*   `enabled`: Toggle the background engine execution.
-*   `autoReassign`: Enable automatic reassignment of breached cases.
-*   `warnBeforeHours`: Lead time in hours to trigger warnings before a breach occurs.
-*   `reminderIntervalHours`: Minimum wait time between successive escalations on the same case.
-*   `maxLevel`: Limit of escalation cycles allowed per complaint (capped at 3).
-*   `notifyAdmins` & `notifyOfficers`: Toggles for push/in-app alert dispatches.
-*   `triggers`: Define which breach types trigger escalation (`unassigned`, `notUpdated`, `inactive`).
-
-### 3. Execution Lifecycle
-The engine runs automatically on a background scheduler configured via `ESCALATION_INTERVAL_MIN` (defaulting to every 15 minutes). It can also be manually triggered via `POST /api/escalations/run`.
+- **No single trusted channel** — victims don't know where or how to report digital crimes.
+- **Opaque progress** — once a complaint is filed, citizens rarely know what's happening.
+- **Manual triage & lost cases** — complaints sit unassigned or stall with no accountability.
+- **Fragmented evidence & communication** — files and messages live in scattered places.
+- **Weak oversight** — administrators lack live metrics, audit trails, and SLA enforcement.
 
 ---
 
-## Session & Authentication Security
+## ✅ Solution Overview
 
-Authentication utilizes a hybrid JWT and server-side session tracking system:
+This portal addresses each gap directly:
 
-```
-[User Login Request] ---> Verify Password (bcrypt) ---> Write Session Object
-                                                          - Generate unique `sessionId`
-                                                          - Store in `sessions` collection
-                                                          - Embed `sid` claim inside JWT
-                                                              |
-                                      +-----------------------+-----------------------+
-                                      |                                               |
-                                      v                                               v
-                         [Set HTTP-only Cookie]                          [Return Token in Response Body]
-                         - Name: `ccrs_session`                          - Saved to `localStorage` (compatibility)
-                         - Path: `/`                                     - Sent as `Authorization: Bearer <token>`
-                         - SameSite: "Lax"
-                         - Secure: true (in Production)
-```
-
-### Authentication Verification Workflow
-For every protected route request:
-1.  **Extraction**: The backend extracts the JWT from the `ccrs_session` cookie or the `Authorization` header.
-2.  **JWT Verification**: Verifies the signature against `JWT_SECRET` and confirms the expiration.
-3.  **Active Session Validation**: Queries the `sessions` collection using the `sid` claim:
-    *   *Is the session present?*
-    *   *Has `revokedAt` been populated?*
-    *   *Has the session passed its `expiresAt` date?*
-4.  **Security Actions**: If a validation fails, the request is rejected with a `401 Unauthorized` status, and the `ccrs_session` cookie is cleared.
-5.  **Logout**: Triggers immediate session revocation by updating `revokedAt` to `new Date()` and clearing client cookies.
+| Problem | Solution in this portal |
+|---|---|
+| No trusted channel | Public, branded portal with secure registration & guided reporting |
+| Opaque progress | Order-tracking-style **complaint timeline** with officer + notes, real-time updates |
+| Lost / stalled cases | **Automated escalation engine** with configurable SLAs and auto-reassignment |
+| Fragmented evidence | **Evidence thread** — files + messages in one case record, with previews |
+| Weak oversight | **Audit trail**, **advanced analytics**, **system health**, and **real-time** dashboards |
 
 ---
 
-## Evidence Upload & Storage Controls
+## 🧩 Complete Feature List
 
-The backend handles multi-file evidence uploads using `multer` with strict validation to prevent server resource abuse.
+### Public Website Features
+- Premium **hero**, services, **complaint workflow**, statistics with **animated counters**.
+- **Cyber Awareness Center**, latest **cyber alerts**, **success stories / testimonials**.
+- **FAQ** (accordion), **Contact**, **Help Center**, **Cyber Laws (PECA)**, **Security Guidelines**, **Blog**, **Emergency Help & Hotlines**.
+- Legal: **Privacy Policy**, **Terms & Conditions**, **Cookie Policy**, **Data Privacy**.
+- **Track Complaint** / **Status Checker** entry points.
+- **Cookie consent** banner (Accept / Reject, persisted), **404** page, **scroll-to-top** + **back-to-top**, **reduced-motion** support, per-page **SEO meta** tags, full keyboard accessibility.
 
-*   **Size Limits**: Capped at **100 MB** per file and **1 GB** total upload size per request.
-*   **File Count**: Limited to a maximum of **10** files per request.
-*   **Supported File Types**: Restricted to images, PDF, ZIP, TXT, and CSV.
-*   **Content-Length Validation**: Evaluates the `Content-Length` header before Multer processes files to prevent large uploads from consuming memory.
-*   **Cleanup on Validation Failure**: If a file upload fails validation, the system automatically deletes any temporarily written files using `fs.unlink`.
-*   **Database Association**: Uploaded files generate entries in the `evidence` collection, linking metadata (file path, MIME type, size) to the corresponding complaint.
+### User Panel Features
+- **Report a Crime** with validation and inline error states.
+- **Draft system** — autosave (debounced), **localStorage mirror** (survives refresh / accidental navigation), **auto-restore**, **multiple drafts**, and a dedicated **Drafts management page**.
+- **Track Complaint** — real-time **progress timeline** (officer name + notes per stage), status & severity badges, escalation badge.
+- **Evidence & Communication** — submit files **with a written message** in a single action; threaded view with sender, timestamp, preview/download.
+- **Complaint Details** page, **notifications**, and **analytics** scoped to the user.
+
+### Officer Panel Features
+- **Investigation Workspace** — assignment queue, SLA countdowns, escalation badges.
+- **Accept / Reject assignment** — rejection requires a reason and returns the case to the admin queue.
+- **Status & severity updates** with notes that feed the user timeline.
+- **Evidence thread** + **case messaging**.
+- **Officer Calendar** — Evidence Review / User Meetings / Investigation Tasks / Case Deadlines / Follow-ups, with **priority levels**, month/week/agenda views, **due-reminder notifications**, and dashboard widgets (Today / Overdue / Upcoming).
+- **Complaint Details**, notifications, and scoped analytics.
+
+### Admin Panel Features
+- **Command dashboard** — KPIs, recent complaints, **assign to officer**, status control, escalation badges.
+- **User management** (approve/reject officers, roles, status), **Crime Map**, **Officer Performance**.
+- **Advanced Analytics** (filters + CSV/Print export), **System Health** (live), **Escalations** + **Escalation Rules**, **Audit Trail**.
+- **Global, role-aware search** across complaints, users, assignments, tickets, notifications.
 
 ---
 
-## Database Schema Reference
+## 🔄 Complaint Lifecycle Workflow
 
-The system uses 17 collections in MongoDB Atlas, managed via Mongoose models:
-
-### 1. User (`users`)
-Tracks registered users, role status, phone verification status, and officer approval history.
-```javascript
-{
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  passwordHash: { type: String, required: true, select: false },
-  role: { type: String, enum: ["Admin", "InvestigationOfficer", "PendingOfficer", "User"], default: "User" },
-  isApprovedOfficer: { type: Boolean, default: false },
-  officerRequestStatus: { type: String, enum: ["None", "Pending", "Approved", "Rejected"], default: "None" },
-  officerRequestedAt: { type: Date },
-  officerReviewedAt: { type: Date },
-  officerReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  officerReviewReason: { type: String, default: "" },
-  unit: { type: String, default: "" },
-  phoneNumber: { type: String, default: "" },
-  phoneVerified: { type: Boolean, default: false },
-  cnic: { type: String, default: "" },
-  status: { type: String, enum: ["Active", "Inactive"], default: "Active" }
-}
+```
+Submitted ──▶ Reviewed ──▶ Assigned ──▶ Investigation Started ──▶ Evidence Verified ──▶ Resolved / Closed
 ```
 
-### 2. Complaint (`complaints`)
-Contains complaint details, severity, status, routing, and escalation properties.
-```javascript
-{
-  referenceId: { type: String, unique: true, index: true },
-  complainantName: { type: String, required: true },
-  email: { type: String, required: true },
-  phoneNumber: { type: String, default: "" },
-  incidentType: { type: String, required: true },
-  department: { type: String, default: "" },
-  city: { type: String, default: "" },
-  incidentSummary: { type: String, required: true },
-  evidenceLinks: { type: [String], default: [] },
-  severity: { type: String, enum: ["Low", "Medium", "High", "Critical"], default: "High" },
-  status: { type: String, enum: ["Pending", "In Review", "Under Investigation", "Resolved", "Closed"], default: "Pending" },
-  caseNotes: [{
-    author: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    text: { type: String, required: true },
-    createdAt: { type: Date, default: Date.now }
-  }],
-  statusHistory: [{
-    status: { type: String },
-    at: { type: Date, default: Date.now },
-    by: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
-  }],
-  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  resolvedAt: { type: Date },
-  escalationLevel: { type: Number, default: 0 },
-  escalated: { type: Boolean, default: false },
-  lastEscalatedAt: { type: Date },
-  slaWarnedAt: { type: Date },
-  evidence: [{ type: mongoose.Schema.Types.ObjectId, ref: "Evidence" }]
-}
-```
+Backed by the canonical status enum: **Pending → In Review → Under Investigation → Resolved → Closed**.
 
-### 3. Session (`sessions`)
-Stores active tokens and details for login sessions.
-```javascript
-{
-  sessionId: { type: String, required: true, unique: true, index: true },
-  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-  expiresAt: { type: Date, required: true, index: true },
-  revokedAt: { type: Date, default: null },
-  userAgent: { type: String, default: "" },
-  ipAddress: { type: String, default: "" }
-}
-```
+1. **User** submits a complaint → severity & department are inferred → `Pending`.
+2. **Admin** assigns it to a department-matched **Officer** → `Under Investigation` (recorded in status history with actor + note).
+3. **Officer** **accepts** (begins work) or **rejects with a reason** (returns to admin queue, `Pending`).
+4. Officer reviews **evidence**, exchanges **messages**, posts **notes**, and updates status.
+5. Case is **Resolved/Closed** → resolution summary recorded; complainant notified.
 
-### 4. Assignment (`assignments`)
-Tracks case assignments and investigator status updates.
-```javascript
-{
-  complaint: { type: mongoose.Schema.Types.ObjectId, ref: "Complaint", required: true },
-  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  status: { type: String, enum: ["Assigned", "In Progress", "Completed"], default: "Assigned" },
-  notes: { type: String, default: "" }
-}
-```
+Every transition is appended to an immutable **status history** (status, timestamp, actor, note) that powers the user-facing timeline.
 
-### 5. Evidence (`evidence`)
-Stores file metadata for files uploaded to the local filesystem.
-```javascript
-{
-  complaint: { type: mongoose.Schema.Types.ObjectId, ref: "Complaint", required: true },
-  uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  originalName: { type: String, required: true },
-  filePath: { type: String, required: true },
-  mimeType: { type: String, default: "" },
-  size: { type: Number, default: 0 }
-}
-```
+---
 
-### 6. EscalationConfig (`escalationconfigs`)
-Configuration document for background engine runs.
-```javascript
-{
-  key: { type: String, default: "global", unique: true },
-  enabled: { type: Boolean, default: true },
-  slaHours: {
-    Critical: { type: Number, default: 24 },
-    High: { type: Number, default: 48 },
-    Medium: { type: Number, default: 96 },
-    Low: { type: Number, default: 168 }
-  },
-  triggers: {
-    unassigned: { type: Boolean, default: true },
-    notUpdated: { type: Boolean, default: true },
-    inactive: { type: Boolean, default: true }
-  },
-  autoReassign: { type: Boolean, default: true },
-  warnBeforeHours: { type: Number, default: 6 },
-  reminderIntervalHours: { type: Number, default: 24 },
-  maxLevel: { type: Number, default: 3 },
-  notifyAdmins: { type: Boolean, default: true },
-  notifyOfficers: { type: Boolean, default: true },
-  updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
-}
-```
+## 🚨 Escalation Engine
 
-### 7. EscalationLog (`escalationlogs`)
-Chronological audit logs of SLA breaches and reassignments.
-```javascript
-{
-  complaint: { type: mongoose.Schema.Types.ObjectId, ref: "Complaint", required: true, index: true },
-  referenceId: { type: String, default: "" },
-  level: { type: Number, default: 1 },
-  type: { type: String, enum: ["Triggered", "Reassigned", "Queued", "Warning", "Violation", "Resolved", "AdminOverride"], required: true },
-  reason: { type: String, default: "" },
-  severity: { type: String, default: "" },
-  slaHours: { type: Number },
-  ageHours: { type: Number },
-  fromOfficer: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  toOfficer: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  adminOverride: { type: Boolean, default: false },
-  by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  city: { type: String, default: "" },
-  category: { type: String, default: "" }
-}
-```
+A scalable, background engine that enforces SLAs without manual intervention.
 
-### 8. ComplaintDraft (`complaintdrafts`)
-User-owned snapshots of in-progress complaint forms.
-```javascript
-{
-  owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-  title: { type: String, default: "Untitled draft" },
-  data: { type: mongoose.Schema.Types.Mixed, default: {} }
-}
-```
+- **Configurable SLAs** per severity (Critical / High / Medium / Low, in hours).
+- **Triggers**: unassigned beyond SLA, no update beyond SLA, or inactive officer.
+- **Auto-reassignment** to the most senior eligible officer (ranked by resolved-case volume, balanced by workload, department-matched).
+- **Notifications** to admins (and the new officer), plus an immutable **EscalationLog** audit trail.
+- **Warnings** before deadlines and **escalation badges** on dashboards.
+- **Admin-configurable** via the Escalation Rules page; runs on an interval (default 15 min) and on demand.
 
-### 9. ComplaintMessage (`complaintMessages`)
-Internal messages between citizens and investigation teams.
-```javascript
-{
-  complaint: { type: mongoose.Schema.Types.ObjectId, ref: "Complaint", required: true, index: true },
-  sender: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  senderRole: { type: String, enum: ["Admin", "InvestigationOfficer", "User"], required: true },
-  message: { type: String, required: true }
-}
-```
+---
 
-### 10. Notification (`notifications`)
-Stores in-app messages and communication channels.
-```javascript
-{
-  recipient: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  title: { type: String, required: true },
-  message: { type: String, required: true },
-  type: { type: String, enum: ["Complaint", "Status", "Assignment", "OTP", "Support", "System"], default: "System" },
-  channel: { type: String, enum: ["InApp", "Email", "SMS"], default: "InApp" },
-  meta: { type: mongoose.Schema.Types.Mixed, default: {} },
-  read: { type: Boolean, default: false }
-}
-```
+## ⚡ Real-Time Communication Architecture
 
-### 11. OfficerApprovalLog (`officerApprovalLogs`)
-History of approvals and rejections of officer applications.
-```javascript
-{
-  officer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  admin: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  action: { type: String, enum: ["Approved", "Rejected"], required: true },
-  department: { type: String, default: "" },
-  reason: { type: String, default: "" }
-}
-```
+Powered by **Socket.IO** with a JWT-authenticated handshake and room-based delivery.
 
-### 12. OtpVerification (`otpverifications`)
-Tracks registration OTP lifecycle.
-```javascript
-{
-  phone: { type: String, required: true, index: true },
-  purpose: { type: String, default: "registration" },
-  codeHash: { type: String, required: true, select: false },
-  attempts: { type: Number, default: 0 },
-  resendCount: { type: Number, default: 0 },
-  verified: { type: Boolean, default: false },
-  expiresAt: { type: Date, required: true },
-  lastSentAt: { type: Date, default: Date.now },
-  verifiedAt: { type: Date }
-}
-```
+- **Rooms**: `user:<id>` (personal), `role:Admin|InvestigationOfficer|User` (broadcast), `complaint:<id>` (per-case detail view).
+- **Centralized emits**: every in-app notification is delivered instantly via `createNotification`; every audit entry streams to admins via `recordAudit`; complaint/stat changes fan out from a single chokepoint.
+- **Safe fallback**: polling remains as a backstop (longer intervals when connected), so the app degrades gracefully if WebSockets are blocked.
+- **Coverage**: notifications, complaint status, assignment alerts, escalation alerts, support tickets, calendar reminders, dashboard statistics, and a system-health heartbeat.
 
-### 13. Reminder (`reminders`)
-Tracks calendar reminders for officers.
-```javascript
-{
-  officer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-  title: { type: String, required: true },
-  category: { type: String, enum: ["EvidenceReview", "UserMeeting", "InvestigationDeadline", "CaseFollowUp", "InternalReview", "Custom"], default: "Custom" },
-  notes: { type: String, default: "" },
-  complaint: { type: mongoose.Schema.Types.ObjectId, ref: "Complaint" },
-  complaintRef: { type: String, default: "" },
-  dueAt: { type: Date, required: true },
-  allDay: { type: Boolean, default: false },
-  completed: { type: Boolean, default: false },
-  completedAt: { type: Date }
-}
-```
+> See [Socket Events](#-socket-events) for the full event catalog.
 
-### 14. SupportTicket (`supportTickets`)
-Citizen support and feedback requests.
-```javascript
-{
-  requester: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  requesterName: { type: String, default: "" },
-  requesterEmail: { type: String, default: "" },
-  category: { type: String, default: "General" },
-  subject: { type: String, required: true },
-  message: { type: String, required: true },
-  status: { type: String, enum: ["Open", "In Progress", "Closed"], default: "Open" },
-  adminReply: { type: String, default: "" },
-  resolvedAt: { type: Date },
-  rating: { type: Number, min: 1, max: 5 },
-  feedback: { type: String, default: "" }
-}
-```
+---
 
-### 15. Faq (`faqs`)
-Stores Frequently Asked Questions.
-```javascript
-{
-  question: { type: String, required: true },
-  answer: { type: String, required: true },
-  category: { type: String, default: "General" }
-}
-```
+## 📜 Audit Trail System
 
-### 16. AdminAnalytics (`admin_analytics`)
-Cached system analytics.
-```javascript
-{
-  scopeKey: { type: String, default: "global", unique: true },
-  totalComplaints: { type: Number, default: 0 },
-  monthlyCounts: [{ year: Number, month: Number, label: String, count: Number }],
-  yearlyCounts: [{ year: Number, label: String, count: Number }],
-  categoryStats: [{ label: String, count: Number }],
-  pieChartData: [{ label: String, count: Number }],
-  statusSummary: [{ label: String, count: Number }],
-  generatedAt: { type: Date, default: Date.now }
-}
-```
+A **persistent, append-only** audit collection (`auditLogs`) records critical actions:
 
-### 17. UserAnalytics (`user_analytics`)
-Cached dashboard data for individual users.
-```javascript
-{
-  user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  scopeRole: { type: String, enum: ["User", "InvestigationOfficer"], required: true },
-  totalComplaints: { type: Number, default: 0 },
-  monthlyCounts: [{ year: Number, month: Number, label: String, count: Number }],
-  yearlyCounts: [{ year: Number, label: String, count: Number }],
-  categoryStats: [{ label: String, count: Number }],
-  pieChartData: [{ label: String, count: Number }],
-  statusSummary: [{ label: String, count: Number }],
-  generatedAt: { type: Date, default: Date.now }
-}
+`USER_REGISTERED`, `USER_LOGIN`, `USER_LOGOUT`, `USER_UPDATED`, `USER_DELETED`, `OFFICER_APPROVAL`, `COMPLAINT_CREATED`, `STATUS_CHANGED`, `COMPLAINT_UPDATED`, `COMPLAINT_ASSIGNED`, `ASSIGNMENT_ACCEPTED`, `ASSIGNMENT_REJECTED`, `COMPLAINT_DELETED`, `EVIDENCE_UPLOADED`, `ESCALATION`, `SUPPORT_TICKET_CREATED`, `SUPPORT_TICKET_UPDATED`.
+
+Each entry captures **actor**, **role**, **entity**, **summary**, **metadata**, **IP**, and **timestamp**. Auditing is best-effort and never blocks the action it observes. The **Admin Audit Trail** page provides **search, action/entity/user filters, date ranges, pagination, CSV export**, and **live streaming** of new entries. Per-complaint audit history also appears on the Complaint Details page.
+
+---
+
+## 📎 Evidence Management System
+
+- Upload **multiple files** (images, PDF, ZIP, TXT, CSV) with size/type/count validation (Multer).
+- Attach a **written message** to each submission — building a real case **communication thread**.
+- Each item shows **sender + role**, **timestamp**, the **message**, and **image preview / open / download**.
+- Files are stored on disk and served from `/uploads`; metadata lives in the `evidence` collection and is referenced by the complaint.
+
+---
+
+## 🎫 Support Ticket System
+
+- Citizens raise tickets (category, subject, message); status flows **Open → In Progress → Closed**.
+- Admin replies and status changes notify the requester (in-app + real-time).
+- Closed tickets accept a **rating + feedback**. A seeded **FAQ** powers the Help Center.
+
+---
+
+## 📊 Analytics & Reporting
+
+- **Complaints by city, department, category, severity, status**; **monthly trends**; **resolution rate**; **average resolution time**; **officer workload & performance**; **escalated cases**; **notification activity**.
+- **Interactive filters** (date range, city, category, officer, status, department) with drill-down.
+- **Export-ready**: CSV/Excel and Print/PDF. Cached server-side for read-heavy dashboards.
+- **Crime Map** and **Officer Performance** views complement the Advanced Analytics dashboard.
+
+---
+
+## 🩺 System Health Monitoring
+
+A live operational dashboard showing **API status (with latency), database status, uptime, active sessions, online officers (estimated), complaint queue size, evidence storage, throughput, user breakdown, officer utilization, notifications**, plus a **Recent System Activity** feed. It **auto-refreshes** via the real-time heartbeat with a slow polling fallback.
+
+---
+
+## 🔐 Authentication & RBAC
+
+- **JWT** access tokens (stored client-side) **plus server-side sessions** with an httpOnly cookie; sessions can be revoked (logout invalidates immediately).
+- **bcrypt** password hashing; officer signup gated by an **enrollment token** and **admin approval**.
+- **Optional WhatsApp OTP** phone verification during registration (provider-abstracted: console stub today, WhatsApp Cloud API by env only) with a **resend countdown timer**, attempt/expiry limits.
+- **Roles**: `Admin`, `InvestigationOfficer` (must be approved), `PendingOfficer`, `User`.
+- Enforced on the **backend** (route middleware) and reflected on the **frontend** (route guards + role-filtered navigation).
+
+---
+
+## 🛠 Technology Stack
+
+**Frontend**
+- React 19, React Router 6, Tailwind CSS 3, Framer Motion
+- ApexCharts, custom SVG charts, React Icons
+- Socket.IO client, `useSyncExternalStore` shared stores
+
+**Backend**
+- Node.js, Express 5, Mongoose 9, MongoDB Atlas
+- Socket.IO, JSON Web Tokens, bcrypt, Multer
+- Helmet, CORS, compression, express-rate-limit, cookie-parser
+
+**Tooling**
+- Create React App (react-scripts), Prettier, Nodemon, Autocannon (load testing)
+
+---
+
+## 🏗 System Architecture
+
+```mermaid
+flowchart LR
+    subgraph Client["React SPA (CRA + Tailwind)"]
+        PUB["Public Website"]
+        DASH["Role Dashboards<br/>(User / Officer / Admin)"]
+        WS1["Socket.IO client"]
+    end
+
+    subgraph Server["Express 5 API + Socket.IO"]
+        REST["REST Controllers<br/>(RBAC middleware)"]
+        IO["Realtime layer<br/>(rooms: user/role/complaint)"]
+        ENG["Background Engines<br/>(Escalation / Reminders / Heartbeat)"]
+        AUD["Audit + Notify utils"]
+    end
+
+    DB[("MongoDB Atlas")]
+    FS[("Evidence store /uploads")]
+
+    PUB -->|HTTPS| REST
+    DASH -->|HTTPS REST| REST
+    WS1 <-->|WebSocket + JWT| IO
+    REST --> DB
+    REST --> FS
+    ENG --> DB
+    AUD --> DB
+    REST --> AUD
+    AUD --> IO
+    ENG --> IO
 ```
 
 ---
 
-## API Endpoints Reference
+## 🗄 Database Overview
 
-### Authentication & User Management
-| Method | Path | Allowed Roles | Payload / Query | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/users/register` | Public | `{ name, email, password, role, unit, phoneNumber, cnic, officerEnrollmentToken }` | Register a new user or pending officer |
-| `POST` | `/api/users/login` | Public | `{ email, password }` | Authenticate user, set cookie, and return token |
-| `POST` | `/api/users/logout` | All Roles | None | Revoke session and clear cookies |
-| `GET` | `/api/users/me` | All Roles (Auth) | None | Get current user profile details |
-| `POST` | `/api/users/otp/verify`| All Roles (Auth) | None | Simulate OTP verification |
-| `GET` | `/api/users` | Admin | None | List all registered users |
-| `GET` | `/api/users/officer-requests`| Admin | None | List pending officer applications |
-| `POST` | `/api/users/:id/officer-review`| Admin | `{ action: "approve" \| "reject", department, reason }` | Approve or reject officer applications |
-| `GET` | `/api/users/officer-approval-logs`| Admin | None | Retrieve officer application logs |
-| `PATCH` | `/api/users/:id` | Admin | `{ name, role, unit, status, phoneNumber, cnic }` | Update user details |
-| `DELETE`| `/api/users/:id` | Admin | None | Delete user account |
-| `POST` | `/api/users/admin/create`| Admin | `{ name, email, password }` | Create an additional admin account |
+MongoDB (Mongoose) collections:
 
-### Complaints Management
-| Method | Path | Allowed Roles | Payload / Query | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/complaints` | User | `{ complainantName, email, phoneNumber, incidentType, city, incidentSummary, evidenceLinks, severity }` | Submit a new complaint |
-| `GET` | `/api/complaints/search` | User (own), Officer (assigned), Admin (all) | `?complaintId=` or `?referenceId=` | Search complaints by ID or reference number |
-| `GET` | `/api/complaints/stats` | All Roles (Auth) | None | Get dashboard counts |
-| `GET` | `/api/complaints/assigned` | Officer, Admin | None | List assigned complaints |
-| `GET` | `/api/complaints/city-stats` | Admin | None | Get complaint metrics grouped by city |
-| `POST` | `/api/complaints/:id/assign`| Admin | `{ officerId, notes }` | Assign complaint to matching officer |
-| `PATCH` | `/api/complaints/:id/status`| Officer (assigned), Admin | `{ status, severity, notes }` | Update complaint status and append notes |
-| `DELETE`| `/api/complaints/:id` | Admin | None | Delete a complaint and its dependencies |
-
-### Evidence & Messaging
-| Method | Path | Allowed Roles | Payload / Query | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/complaints/:id/evidence`| User, Officer, Admin | Form Data: `evidenceFiles` (file array) | Upload files to local storage and link them to the case |
-| `GET` | `/api/complaints/:id/evidence`| User, Officer, Admin | None | List files linked to the case |
-| `DELETE`| `/api/complaints/:id/evidence/:evidenceId`| Admin | None | Delete a linked file |
-| `POST` | `/api/complaints/:id/messages`| User, Officer, Admin | `{ message }` | Post a new Q&A message |
-| `GET` | `/api/complaints/:id/messages`| User, Officer, Admin | None | Retrieve Q&A message history |
-
-### Support Tickets & FAQs
-| Method | Path | Allowed Roles | Payload / Query | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/support-tickets` | User, Officer, Admin | `{ requesterName, requesterEmail, category, subject, message }` | Submit a support request |
-| `GET` | `/api/support-tickets` | User, Officer, Admin | None | List submitted support tickets |
-| `PATCH` | `/api/support-tickets/:id`| Officer, Admin | `{ status, adminReply }` | Respond to and update support tickets |
-| `PATCH` | `/api/support-tickets/:id/feedback`| User | `{ rating, feedback }` | Rate resolved support tickets |
-| `GET` | `/api/support-tickets/faq/list`| User, Officer, Admin | None | Get seeded FAQ questions |
-| `DELETE`| `/api/support-tickets/:id` | Admin | None | Delete support tickets |
-
-### System Reports & Analytics dashboards
-| Method | Path | Allowed Roles | Payload / Query | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/api/reports/summary` | User, Officer, Admin | `?refresh=true` | Get cached system-wide analytics |
-| `GET` | `/api/reports/summary/admin`| Admin | `?refresh=true` | Get cached admin dashboard data |
-| `GET` | `/api/reports/summary/user` | User, Officer | `?refresh=true` | Get cached user dashboard data |
-| `GET` | `/api/reports/system-health`| Admin | None | Get live system health diagnostics |
-| `GET` | `/api/reports/officer-performance`| Admin | None | Get officer productivity metrics |
-| `GET` | `/api/reports/escalations`| Admin | None | List open cases and their SLA usage |
-| `GET` | `/api/reports/audit-log` | Admin | `?limit=150` | Retrieve system audit logs |
-| `GET` | `/api/reports/analytics` | Admin | `?from=&to=&city=&category=&officer=&status=&department=` | Get advanced analytics metrics |
-
-### Drafts System
-| Method | Path | Allowed Roles | Payload / Query | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/api/drafts` | All Roles (Auth) | None | Get list of user's drafts |
-| `POST` | `/api/drafts` | All Roles (Auth) | `{ title, data }` | Save an in-progress draft |
-| `GET` | `/api/drafts/:id` | All Roles (Auth) | None | Retrieve draft details |
-| `DELETE`| `/api/drafts/:id` | All Roles (Auth) | None | Delete draft |
-
-### OTP Validation Simulation
-| Method | Path | Allowed Roles | Payload / Query | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/otp/request` | Public | `{ phone, purpose }` | Request validation code |
-| `POST` | `/api/otp/resend` | Public | `{ phone, purpose }` | Resend verification code |
-| `POST` | `/api/otp/verify` | Public | `{ phone, code, purpose }` | Verify OTP code |
-
-### Reminders & Calendar
-| Method | Path | Allowed Roles | Payload / Query | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/api/reminders` | Officer, Admin | None | Get officer's reminders |
-| `POST` | `/api/reminders` | Officer, Admin | `{ title, category, notes, complaint, dueAt, allDay }` | Add calendar reminder |
-| `PATCH` | `/api/reminders/:id` | Officer, Admin | `{ title, notes, dueAt, completed, completedAt }` | Update reminder |
-| `DELETE`| `/api/reminders/:id` | Officer, Admin | None | Remove reminder |
-
-### SLA Escalation Rules Control
-| Method | Path | Allowed Roles | Payload / Query | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/api/escalations/config` | Admin | None | Retrieve global SLA configurations |
-| `PUT` | `/api/escalations/config` | Admin | `{ enabled, autoReassign, notifyAdmins, notifyOfficers, warnBeforeHours, maxLevel, slaHours, triggers }` | Update global SLA configurations |
-| `GET` | `/api/escalations/queue` | Admin | None | List escalated complaints |
-| `GET` | `/api/escalations/logs` | Admin | `?type=&limit=` | Retrieve SLA breach history |
-| `GET` | `/api/escalations/stats` | Admin | None | Get SLA performance statistics |
-| `POST` | `/api/escalations/run` | Admin | None | Run escalation engine cycle immediately |
-| `POST` | `/api/escalations/:complaintId/reassign`| Admin | `{ officerId }` | Manually reassign an escalated case |
+| Collection | Purpose |
+|---|---|
+| `users` | Accounts, roles, officer approval, phone verification |
+| `complaints` | Cyber crime cases, status/severity, status history, case notes, escalation state |
+| `assignments` | Officer ↔ complaint assignments + accept/reject response |
+| `evidence` | Uploaded files + attached messages (thread) |
+| `complaintMessages` | Case Q&A messages |
+| `notifications` | In-app / email / SMS notifications |
+| `sessions` | JWT session tracking & revocation |
+| `reminders` | Officer calendar events (category, priority, due, completion) |
+| `supportTickets` | Help desk tickets + feedback |
+| `auditLogs` | Persistent audit trail |
+| `escalationConfigs` / `escalationLogs` | SLA config + immutable escalation history |
+| `officerApprovalLogs` | Officer approval decisions |
+| `complaintDrafts` | Server-side complaint drafts |
+| `faqs` | Help Center FAQ |
 
 ---
 
-## Performance, Caching & Testing
-
-### 1. In-Memory Cache Optimization
-The system uses a memory cache module (`backend/utils/memoryCache.js`) to cache dashboard data:
-*   General statistics requests (`/api/complaints/stats`) are cached for **15 seconds** (adjustable via `CACHE_STATS_TTL_MS`).
-*   Advanced analytics results (`/api/reports/analytics`) are cached for **30 seconds**. This reduces the database workload for dashboard queries that filter across multiple fields.
-
-### 2. Database Indexing Optimization
-The system configures database indexes to optimize query performance:
-*   `users`: Compounded index on `{ role: 1, officerRequestStatus: 1 }` and `{ status: 1 }`.
-*   `complaints`: Indexes on `{ createdBy: 1, createdAt: -1 }`, `{ assignedTo: 1, createdAt: -1 }`, `{ status: 1, severity: 1 }`, `{ department: 1 }`, `{ city: 1 }`, and `{ escalated: 1, status: 1 }`.
-*   `sessions`: Index on `{ user: 1, revokedAt: 1, expiresAt: 1 }`.
-*   `evidence`: Index on `{ complaint: 1, createdAt: -1 }`.
-*   `reminders`: Compounded index on `{ officer: 1, dueAt: 1 }` and `{ officer: 1, completed: 1 }`.
-*   `escalationlogs`: Index on `{ type: 1, createdAt: -1 }`.
-
-Indices are synchronized on server boot via `User.syncIndexes()`, `Complaint.syncIndexes()`, `Evidence.syncIndexes()`, and `Session.syncIndexes()`. This can also be manually run using `npm run ensure:indexes`.
-
-### 3. API Load Testing Tools
-The codebase includes load testing tools in `backend/scripts/load-test/`:
-
-*   **Autocannon Performance Scripts**: Simulated connections are managed by `run-autocannon.js`:
-    *   **Smoke Test**: Runs a quick test scenario.
-        ```bash
-        cd backend
-        npm run load:test:smoke
-        ```
-    *   **Full Stress Test**: Simulates 1,000 concurrent connections over 30 seconds across endpoints for health, log-in, dashboard statistics, and queries.
-        ```bash
-        cd backend
-        npm run load:test
-        ```
-*   **k6 Integration Scenarios**: Configured in `k6-load.js`. Run using the k6 CLI:
-    ```bash
-    k6 run backend/scripts/load-test/k6-load.js
-    ```
-
----
-
-## Folder Structure
+## 📁 Folder Structure
 
 ```
 horizon-tailwind-react-main/
-├── backend/
-│   ├── config/
-│   │   └── appConfig.js             # Parses environment variables and exports configuration
-│   ├── controllers/                 # Express controllers containing business logic
-│   │   ├── assignmentController.js  # Case assignment management
-│   │   ├── complaintController.js   # Complaint submission, search, and details
-│   │   ├── draftController.js       # Citizen complaint form drafts
-│   │   ├── escalationController.js  # SLA rules and reassignment API
-│   │   ├── evidenceController.js    # Multer upload hooks and metadata associations
-│   │   ├── messageController.js     # Citizen-investigator Q&A messaging
-│   │   ├── notificationController.js# Notification center management
-│   │   ├── otpController.js         # Phone verification OTP simulation
-│   │   ├── reminderController.js    # Investigator calendar and reminder management
-│   │   ├── reportController.js      # System Health, Performance, and Advanced Analytics
-│   │   ├── supportTicketController.js # Support ticket management
-│   │   └── userController.js        # Authentication, profile, and officer approval
-│   ├── middleware/                  # Request handling and security logic
-│   │   ├── authMiddleware.js        # Extracts JWT and verifies active sessions
-│   │   ├── errorHandler.js          # Handles 404 and global exceptions
-│   │   ├── roles.js                 # Verifies role-based access limits
-│   │   ├── security.js              # Helmet, CORS, Rate Limiters, and Request Timeout config
-│   │   ├── upload.js                # Multer configuration and file type validation
-│   │   └── uploadValidation.js      # Checks request length and handles cleanup
-│   ├── models/                      # Mongoose schemas
-│   │   ├── AdminAnalytics.js
-│   │   ├── Assignment.js
-│   │   ├── Complaint.js
-│   │   ├── ComplaintDraft.js
-│   │   ├── ComplaintMessage.js
-│   │   ├── EscalationConfig.js
-│   │   ├── EscalationLog.js
-│   │   ├── Evidence.js
-│   │   ├── Faq.js
-│   │   ├── Notification.js
-│   │   ├── OfficerApprovalLog.js
-│   │   ├── OtpVerification.js
-│   │   ├── Reminder.js
-│   │   ├── Session.js
-│   │   ├── SupportTicket.js
-│   │   ├── User.js
-│   │   └── UserAnalytics.js
-│   ├── routes/                      # Express routers
-│   ├── scripts/                     # Database maintenance scripts
-│   │   ├── ensureIndexes.js         # Creates database indexes
-│   │   ├── syncValidators.js        # Updates MongoDB Atlas JSON validators
-│   │   └── load-test/               # Performance testing scripts
-│   ├── uploads/                     # Directory for uploaded evidence files
-│   ├── utils/                       # Common utilities
-│   │   ├── analyticsStore.js        # Populates cached analytics reports
-│   │   ├── escalationEngine.js      # Background SLA evaluation
-│   │   ├── memoryCache.js           # In-memory key-value cache
-│   │   ├── notify.js                # Dispatches in-app notifications
-│   │   ├── otpProvider.js           # Simulation functions for OTP codes
-│   │   ├── seedAdmin.js             # Seeds default administrator accounts
-│   │   ├── seedFaq.js               # Seeds base support FAQ data
-│   │   └── sessionService.js        # Creates, verifies, and revokes login sessions
-│   ├── .env.example                 # Template for backend configuration
-│   ├── package.json                 # Backend package dependencies and run scripts
-│   └── server.js                    # Server bootstrap and database connection
-├── src/                             # React application source
-│   ├── components/                  # Shared React components
-│   │   ├── RoleGuard.jsx            # Dynamic routing access protector
-│   │   └── ui/                      # Dashboard UI controls
-│   ├── layouts/                     # Admin dashboard shell layouts
-│   ├── routes.js                    # Defines views and roles configurations
-│   ├── services/                    # Frontend HTTP API client
-│   │   └── api.js                   # central apiFetch configuration
-│   ├── utils/                       # Frontend helper utilities
-│   │   ├── auth.js                  # Login/session helpers
-│   │   └── exporters.js             # CSV exporters and PDF printing functions
-│   └── views/                       # React view components
-│       ├── admin/                   # Admin, Officer, and shared view workspaces
-│       ├── auth/                    # Registration and sign-in view containers
-│       └── public/                  # Static information pages and status checkers
-├── tailwind.config.js               # Tailwind design system configurations
-├── package.json                     # Shared frontend configurations
-└── README.md                        # Application documentation
+├── public/                      # CRA static assets
+├── src/                         # React frontend
+│   ├── components/
+│   │   ├── public/              # Public site (Navbar, Footer, sections, CookieConsent, ...)
+│   │   ├── navbar/              # Dashboard navbar + GlobalSearch
+│   │   ├── sidebar/             # Role-filtered sidebar
+│   │   ├── ui/                  # Shared kit (StatCard, badges, skeletons, EvidenceThread, charts, timelines)
+│   │   └── ...
+│   ├── layouts/                 # public / auth / admin / rtl layouts
+│   ├── routes/publicRoutes.js   # Public routes
+│   ├── routes.js                # Authenticated (RBAC) routes
+│   ├── services/                # api.js (fetch wrapper), socket.js (realtime client)
+│   ├── utils/                   # auth, notificationsStore, remindersStore, exporters, cookieConsent
+│   ├── views/
+│   │   ├── public/              # Home, About, Services, FAQ, NotFound, ...
+│   │   ├── auth/                # SignIn, Register
+│   │   └── admin/               # Dashboards & pages (CrimeDashboard, Investigations, Evidence,
+│   │                            #   ComplaintDetails, Drafts, AuditLog, SystemHealth, Analytics, ...)
+│   └── index.js / App.jsx
+├── backend/                     # Express API
+│   ├── config/                  # appConfig.js
+│   ├── controllers/             # user, complaint, evidence, message, assignment, escalation,
+│   │                            #   report, audit, search, support, reminder, draft, otp, notification
+│   ├── middleware/              # auth, roles, security, upload, errorHandler
+│   ├── models/                  # Mongoose schemas
+│   ├── routes/                  # Express routers (mounted under /api)
+│   ├── utils/                   # realtime, notify, audit, escalationEngine, reminderEngine, otpProvider, ...
+│   ├── uploads/                 # Stored evidence files
+│   └── server.js                # App + Socket.IO bootstrap
+├── tailwind.config.js
+└── README.md
 ```
 
 ---
 
-## Setup & Installation
+## 🚀 Installation Guide
 
 ### Prerequisites
-*   [Node.js](https://nodejs.org/) (v18 or higher recommended)
-*   [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) account with an active cluster connection.
+- **Node.js** ≥ 18 and npm
+- A **MongoDB Atlas** cluster (or local MongoDB)
 
-### Installation Steps
+### 1. Clone
+```bash
+git clone <your-repo-url>
+cd horizon-tailwind-react-main
+```
 
-1.  **Clone the Repository** and navigate to the root directory.
-2.  **Install Root Dependencies**:
-    ```bash
-    npm install
-    ```
-3.  **Install Backend Dependencies**:
-    ```bash
-    cd backend
-    npm install
-    ```
-4.  **Configure Environment Variables**:
-    Create a `.env` file in the `backend/` directory, using the values in `backend/.env.example` as a template:
-    ```ini
-    PORT=5000
-    MONGO_URI=mongodb+srv://<username>:<password>@cluster0.example.mongodb.net/cybercrime?retryWrites=true&w=majority
-    JWT_SECRET=super_secure_jwt_passphrase_here
-    JWT_EXPIRES_IN=7d
-    CORS_ORIGIN=http://localhost:3000
-    OFFICER_ENROLLMENT_TOKEN=fia_agent_enrollment_verification_key
-    MAX_FILE_SIZE_MB=100
-    MAX_TOTAL_UPLOAD_MB=1024
-    MAX_FILES_PER_REQUEST=10
-    RATE_LIMIT_WINDOW_MS=60000
-    RATE_LIMIT_MAX=300
-    RATE_LIMIT_AUTH_MAX=20
-    MONGO_MAX_POOL_SIZE=50
-    MONGO_MIN_POOL_SIZE=5
-    SESSION_COOKIE_NAME=ccrs_session
-    SESSION_COOKIE_SECURE=false
-    SESSION_MAX_AGE_MS=604800000
-    ESCALATION_INTERVAL_MIN=15
-    DEFAULT_ADMIN_EMAIL=admin@cybercrime.local
-    DEFAULT_ADMIN_PASSWORD=AdminPassword123!
-    ```
+### 2. Backend setup
+```bash
+cd backend
+npm install
+cp .env.example .env        # then edit .env (see below)
+npm run dev                 # nodemon, or: npm start
+# API on http://localhost:5000  (Socket.IO shares this port)
+```
 
-5.  **Initialize Database Schemas & Seed Data**:
-    Run these scripts from the `backend/` directory:
-    ```bash
-    # Sync JSON validator schemas with Atlas collections
-    npm run sync:validators
+### 3. Frontend setup
+```bash
+# from the project root (new terminal)
+npm install
+npm start
+# App on http://localhost:3000
+```
 
-    # Apply database indexes to speed up query execution
-    npm run ensure:indexes
-    ```
-
-6.  **Start the Backend API Server**:
-    *   **Production mode**:
-        ```bash
-        npm start
-        ```
-    *   **Development mode** (runs with nodemon):
-        ```bash
-        npm run dev
-        ```
-    The server will startup on the configured `PORT` (default is `5000`). It will automatically seed the database with the default Admin account (`admin@cybercrime.local` / `AdminPassword123!`) and default FAQ entries.
-
-7.  **Start the React Frontend**:
-    Open a new terminal window at the root directory of the project:
-    ```bash
-    npm start
-    ```
-    The React application will launch at `http://localhost:3000`.
+The default admin is seeded on first boot from `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD`.
 
 ---
 
-## Troubleshooting & Maintenance
+## 🔧 Environment Variables
 
-| Problem | Potential Root Cause | Diagnostic Steps & Solution |
-| :--- | :--- | :--- |
-| **CORS Errors in Browser Console** | Misconfigured origin validation. | Ensure `CORS_ORIGIN` in `backend/.env` matches the frontend address (`http://localhost:3000`). |
-| **401 Unauthorized after Login** | Missing cookies or invalid signature. | Check that the browser is accepting the `ccrs_session` cookie. Verify that `JWT_SECRET` matches on server restarts. |
-| **Database connection timeouts** | Blocked IP addresses or network limits. | Whitelist the server's IP address (or `0.0.0.0/0` for development) in the MongoDB Atlas dashboard. |
-| **Multer Uploads failing with 413** | File size exceeds limits. | Check `MAX_FILE_SIZE_MB` and `MAX_TOTAL_UPLOAD_MB` settings in `backend/.env`. |
-| **403 Forbidden for Officers** | Officer account is pending approval. | An Admin must approve the investigator registration request using the Officer Requests dashboard. |
+Create `backend/.env`:
+
+```bash
+# Server
+PORT=5000
+NODE_ENV=development
+
+# Database (MongoDB Atlas)
+MONGO_URI=mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/CyberCrimeDB?retryWrites=true&w=majority&appName=<app>
+
+# Auth
+JWT_SECRET=replace-with-a-strong-secret
+JWT_EXPIRES_IN=7d
+
+# Officer enrollment (required for officer signup if set)
+OFFICER_ENROLLMENT_TOKEN=your-enrollment-token
+
+# CORS (frontend origin) — also used for the Socket.IO handshake
+CORS_ORIGIN=http://localhost:3000
+
+# Seeded admin (created on first boot)
+DEFAULT_ADMIN_EMAIL=admin@cybercrime.local
+DEFAULT_ADMIN_PASSWORD=Admin@12345
+
+# Background engines (optional)
+ESCALATION_INTERVAL_MIN=15
+REMINDER_INTERVAL_MIN=5
+
+# OTP provider (optional; defaults to console stub)
+OTP_PROVIDER=console            # or: whatsapp_cloud
+WHATSAPP_TOKEN=
+WHATSAPP_PHONE_ID=
+
+# Sessions / cookies (production)
+SESSION_COOKIE_NAME=ccrs_session
+SESSION_COOKIE_SECURE=false     # true behind HTTPS
+SESSION_COOKIE_SAMESITE=lax
+```
+
+> The frontend reads `REACT_APP_API_URL` (defaults to `http://localhost:5000/api`); the Socket.IO origin is derived from it automatically.
 
 ---
 
-## Production Deployment Notes
+## ☁️ MongoDB Atlas Configuration
 
-When deploying to production, apply these configurations:
+1. Create a free cluster at [mongodb.com/atlas](https://www.mongodb.com/atlas).
+2. **Database Access** → add a database user (username + password).
+3. **Network Access** → allow your IP (or `0.0.0.0/0` for testing only).
+4. **Connect → Drivers** → copy the connection string into `MONGO_URI` (keep the `CyberCrimeDB` database name).
+5. Start the backend — indexes are synced and the admin + FAQ are seeded automatically.
 
-1.  **Environment Configuration**:
-    Set `NODE_ENV=production` and `SESSION_COOKIE_SECURE=true`. The secure cookie flag requires that the application be served over HTTPS.
-2.  **Origin Restriction**:
-    Restrict the `CORS_ORIGIN` configuration to the specific domain name of the hosted frontend application.
-3.  **Reverse Proxy Setup**:
-    When running behind a reverse proxy like Nginx or AWS ALB, set `TRUST_PROXY=true` in the environment variables to ensure rate limiting correctly identifies client IP addresses.
-4.  **Persistent Storage Integration**:
-    The system currently stores uploaded files on the local filesystem. For multi-instance deployments behind a load balancer, replace the local directory storage with a shared volume or cloud storage integration (such as AWS S3).
-5.  **Shared Session Cache**:
-    If scaling horizontally, transition the system from local memory caching to a distributed cache store like Redis to share session configurations across all active instances.
+---
+
+## 🌐 API Overview
+
+All endpoints are mounted under `/api`. Protected routes require `Authorization: Bearer <token>` (or the session cookie) and are role-guarded.
+
+| Area | Key endpoints |
+|---|---|
+| **Auth / Users** | `POST /users/register`, `POST /users/login`, `POST /users/logout`, `GET /users/me`, `GET /users`, officer review & user management |
+| **OTP** | `POST /otp/request`, `POST /otp/resend`, `POST /otp/verify` |
+| **Complaints** | `POST /complaints`, `GET /complaints/search`, `GET /complaints/stats`, `GET /complaints/assigned`, `POST /:id/assign`, `POST /:id/respond`, `PATCH /:id/status`, `GET /:id/details`, `DELETE /:id` |
+| **Evidence / Messages** | `POST/GET /complaints/:id/evidence`, `POST/GET /complaints/:id/messages` |
+| **Assignments** | `GET /assignments/my`, `GET/POST/PATCH/DELETE /assignments` |
+| **Drafts** | `GET/POST /drafts`, `GET/DELETE /drafts/:id` |
+| **Notifications** | `GET /notifications`, `PATCH /:id/read`, `PATCH /read-all` |
+| **Reminders** | `GET/POST /reminders`, `PATCH/DELETE /reminders/:id` |
+| **Support Tickets** | `POST/GET /support-tickets`, `PATCH /:id`, `PATCH /:id/feedback`, `GET /faq/list` |
+| **Reports / Analytics** | `GET /reports/summary`, `/analytics`, `/officer-performance`, `/system-health`, `/escalations`, `/audit-log` |
+| **Escalations** | `GET/PUT /escalations/config`, `GET /queue`, `GET /logs`, `GET /stats`, `POST /run`, `POST /:id/reassign` |
+| **Audit Trail** | `GET /audit-logs` (search/filter/date/user/pagination) |
+| **Global Search** | `GET /search?q=` (role-scoped) |
+| **Health** | `GET /health` |
+
+---
+
+## 📡 Socket Events
+
+**Client → Server**
+
+| Event | Purpose |
+|---|---|
+| `complaint:subscribe` / `complaint:unsubscribe` | Join/leave a complaint room (Details page) |
+
+**Server → Client**
+
+| Event | Room | Payload |
+|---|---|---|
+| `connected` | socket | `{ userId, role, at }` |
+| `notification:new` | `user:<id>` | `{ notification }` |
+| `complaint:updated` | admin / owner / officer / `complaint:<id>` | `{ complaintId }` |
+| `stats:changed` | admin / affected users | `{}` (triggers dashboard refresh) |
+| `escalation:alert` | `role:Admin` | `{ complaintId, referenceId, level, severity, reason }` |
+| `ticket:updated` | `role:Admin` | `{ ticketId, status }` |
+| `audit:new` | `role:Admin` | `{ log }` |
+| `health:tick` | `role:Admin` | `{ at }` |
+
+All listeners degrade gracefully to polling if the socket is unavailable.
+
+---
+
+## 📸 Screenshots
+
+> Replace these placeholders with real screenshots in `docs/screenshots/`.
+
+| Public Home | User Timeline | Officer Workspace |
+|---|---|---|
+| _`docs/screenshots/home.png`_ | _`docs/screenshots/timeline.png`_ | _`docs/screenshots/officer.png`_ |
+
+| Admin Dashboard | Advanced Analytics | Audit Trail |
+|---|---|---|
+| _`docs/screenshots/admin.png`_ | _`docs/screenshots/analytics.png`_ | _`docs/screenshots/audit.png`_ |
+
+| Complaint Details | System Health | Escalation Rules |
+|---|---|---|
+| _`docs/screenshots/details.png`_ | _`docs/screenshots/health.png`_ | _`docs/screenshots/escalation.png`_ |
+
+---
+
+## 🚢 Deployment Guide
+
+**Frontend (static)**
+```bash
+npm run build       # outputs ./build
+# Deploy to Vercel / Netlify / Nginx; set REACT_APP_API_URL to the API origin
+```
+
+**Backend (Node + WebSockets)**
+- Deploy to a host that supports **persistent WebSocket connections** (Render, Railway, Fly.io, a VM, etc.).
+- Set all production env vars; `NODE_ENV=production`, `SESSION_COOKIE_SECURE=true`, real `CORS_ORIGIN`.
+- Behind a load balancer / multiple instances, enable **sticky sessions** or add the **Socket.IO Redis adapter** so real-time events broadcast across nodes.
+- Put the API behind **HTTPS** (reverse proxy) and ensure WebSocket upgrade headers pass through.
+- Consider object storage (S3/GCS) for evidence instead of local `/uploads` at scale, and a TTL/retention policy for `auditLogs`.
+
+---
+
+## 🔮 Future Enhancements
+
+- Socket.IO **Redis adapter** for horizontal scaling.
+- **Email/SMS** notification channels (currently modeled; delivery stubbed).
+- **2FA** for admins/officers and full WhatsApp OTP rollout.
+- **Cloud object storage** + virus scanning for evidence.
+- **PDF report generation** server-side (Puppeteer) and scheduled report emails.
+- **i18n / Urdu localization** and an offline-friendly PWA mode.
+- Automated **test suite** (unit + integration + e2e).
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repo and create a feature branch: `git checkout -b feature/your-feature`.
+2. Follow the existing code style (Prettier; match surrounding conventions).
+3. Keep changes additive — **do not break existing APIs, workflows, or RBAC**.
+4. Run `npm run build` (frontend) and verify the backend loads before opening a PR.
+5. Submit a clear PR describing **what** changed and **why**.
+
+---
+
+## 📄 License
+
+This project is distributed under the terms in [LICENSE.md](LICENSE.md). It is intended for educational, governmental, and authorized public-service use.
+
+---
+
+## 👤 Author
+
+**alishasajjad** 
+
+> Update this section with your name, organization, and contact details before publishing. Built as a final-year / enterprise capstone implementation of a national cyber crime management platform.
+
+---
+
+<div align="center">
+
+**Built for a safer digital Pakistan 🇵🇰 — report cyber crime with confidence.**
+
+</div>
