@@ -1,9 +1,23 @@
-console.log("API URL:", process.env.REACT_APP_API_URL);
-const API_BASE =
-  (typeof process !== "undefined" &&
+// Resolve the API base. REACT_APP_API_URL (set at build time) always wins.
+// Without it, fall back to localhost ONLY when actually running on localhost;
+// on any deployed domain fall back to the production backend so a build that
+// is missing the env var can never silently call localhost in production.
+function resolveApiBase() {
+  const envUrl =
+    typeof process !== "undefined" &&
     process.env &&
-    process.env.REACT_APP_API_URL) ||
-  "http://localhost:5000/api";
+    process.env.REACT_APP_API_URL;
+  if (envUrl && String(envUrl).trim()) return String(envUrl).trim();
+
+  const host =
+    typeof window !== "undefined" ? window.location.hostname : "";
+  const isLocal = /^(localhost|127\.0\.0\.1|::1)$/i.test(host);
+  return isLocal
+    ? "http://localhost:5000/api"
+    : "https://fia-cyber-crime-portal-backend.vercel.app/api";
+}
+
+const API_BASE = resolveApiBase();
 
 export { API_BASE };
 
