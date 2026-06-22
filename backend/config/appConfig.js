@@ -18,7 +18,9 @@ function parseMbToBytes(mb) {
 function parseCorsOrigin(value) {
   const list = String(value || "http://localhost:3000")
     .split(",")
-    .map((s) => s.trim())
+    // Trim spaces AND strip any trailing slash so the value matches the
+    // browser's Origin header exactly (origins never include a trailing slash).
+    .map((s) => s.trim().replace(/\/+$/, ""))
     .filter(Boolean);
   return list.length > 1 ? list : list[0];
 }

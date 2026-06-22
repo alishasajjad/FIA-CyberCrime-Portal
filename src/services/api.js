@@ -1,3 +1,4 @@
+console.log("API URL:", process.env.REACT_APP_API_URL);
 const API_BASE =
   (typeof process !== "undefined" &&
     process.env &&
