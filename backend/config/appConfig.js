@@ -11,18 +11,29 @@ function parseMbToBytes(mb) {
   return parsePositiveInt(mb, 1) * 1024 * 1024;
 }
 
-// CORS_ORIGIN may be a single origin or a comma-separated allowlist (e.g. the
-// production frontend URL plus Vercel preview URLs or an apex/www variant).
-// Returns a string for a single origin (unchanged behaviour) or an array for
-// several. Both forms are accepted by the cors package and Socket.IO.
+// Frontend origins that are ALWAYS allowed, regardless of the CORS_ORIGIN env
+// var. This keeps the app working across Vercel domain changes (e.g. renaming
+// the project) without having to update an env var and redeploy. Add new
+// production domains here if the frontend URL changes again. Explicit list ->
+// no wildcard, so it stays safe with credentialed requests.
+const KNOWN_ORIGINS = [
+  "https://fia-cyber-crime-portal.vercel.app",
+  "https://fia-cyber-crime-portal-84k4.vercel.app",
+  "http://localhost:3000",
+];
+
+// CORS_ORIGIN may be a single origin or a comma-separated allowlist. The result
+// is the union of that env value and KNOWN_ORIGINS. Trailing slashes are
+// stripped so values match the browser's Origin header exactly. Returns a
+// string for a single origin or an array for several (both accepted by the
+// cors package and Socket.IO).
 function parseCorsOrigin(value) {
-  const list = String(value || "http://localhost:3000")
+  const fromEnv = String(value || "")
     .split(",")
-    // Trim spaces AND strip any trailing slash so the value matches the
-    // browser's Origin header exactly (origins never include a trailing slash).
     .map((s) => s.trim().replace(/\/+$/, ""))
     .filter(Boolean);
-  return list.length > 1 ? list : list[0];
+  const merged = [...new Set([...fromEnv, ...KNOWN_ORIGINS])];
+  return merged.length > 1 ? merged : merged[0];
 }
 
 const isProduction = process.env.NODE_ENV === "production";
